@@ -32,6 +32,8 @@ class YahooIMAPClient:
             return
         try:
             self._imap.logout()
+        except (imaplib.IMAP4.abort, imaplib.IMAP4.error, OSError):
+            pass
         finally:
             self._imap = None
 

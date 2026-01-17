@@ -272,6 +272,30 @@ def watch_mailbox(
                         mailbox=mailbox,
                         notified=bool(line),
                     )
+                if line is not None:
+                    if logger:
+                        log_event(
+                            logger,
+                            "imap_idle_reconnect",
+                            "idle ended; reconnecting",
+                            correlation_id=f"{mailbox}|{uidvalidity}|{last_seen}",
+                            mailbox=mailbox,
+                        )
+                    try:
+                        client.close()
+                        client.connect()
+                        uidvalidity, _ = client.select(mailbox)
+                        if logger:
+                            log_event(
+                                logger,
+                                "imap_reconnect",
+                                "imap reconnected",
+                                correlation_id=f"{mailbox}|{uidvalidity}|{last_seen}",
+                                mailbox=mailbox,
+                            )
+                    except YahooIMAPError:
+                        time.sleep(poll_interval)
+                        continue
                 if line is None:
                     if logger:
                         log_event(
