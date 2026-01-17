@@ -208,7 +208,7 @@ def watch_mailbox(
     conn,
     account_id: int,
     mailbox: str,
-    idle_timeout: int = 60,
+    idle_timeout: int = 900,
     poll_interval: int = 30,
     logger=None,
 ) -> None:
@@ -272,6 +272,31 @@ def watch_mailbox(
                         mailbox=mailbox,
                         notified=bool(line),
                     )
+                if line is None:
+                    if logger:
+                        log_event(
+                            logger,
+                            "imap_idle_timeout",
+                            "idle timeout; reconnecting",
+                            correlation_id=f"{mailbox}|{uidvalidity}|{last_seen}",
+                            mailbox=mailbox,
+                        )
+                    try:
+                        client.close()
+                        client.connect()
+                        uidvalidity, _ = client.select(mailbox)
+                        if logger:
+                            log_event(
+                                logger,
+                                "imap_reconnect",
+                                "imap reconnected",
+                                correlation_id=f"{mailbox}|{uidvalidity}|{last_seen}",
+                                mailbox=mailbox,
+                            )
+                    except YahooIMAPError:
+                        pass
+                    time.sleep(poll_interval)
+                    continue
                 if line and (b"EXISTS" in line or b"RECENT" in line):
                     if logger:
                         log_event(
