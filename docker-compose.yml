@@ -2,7 +2,19 @@ services:
   yahoo2gmail-forwarder:
     build: .
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      - YAHOO_EMAIL=${YAHOO_EMAIL}
+      - YAHOO_APP_PASSWORD=${YAHOO_APP_PASSWORD}
+      - APP_MASTER_KEY=${APP_MASTER_KEY}
+      - GMAIL_OAUTH_CLIENT_ID=${GMAIL_OAUTH_CLIENT_ID}
+      - GMAIL_OAUTH_CLIENT_SECRET=${GMAIL_OAUTH_CLIENT_SECRET}
+      - GMAIL_OAUTH_REDIRECT_URI=${GMAIL_OAUTH_REDIRECT_URI}
+      - SQLITE_PATH=${SQLITE_PATH}
+      - YAHOO_IMAP_HOST=${YAHOO_IMAP_HOST}
+      - YAHOO_IMAP_PORT=${YAHOO_IMAP_PORT}
+      - GMAIL_LABEL=${GMAIL_LABEL}
+      - DELIVER_TO_INBOX=${DELIVER_TO_INBOX}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - Y2G_DATA_PATH=${Y2G_DATA_PATH}
     volumes:
       - ${Y2G_DATA_PATH:-./data}:/data
