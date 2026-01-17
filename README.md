@@ -57,6 +57,29 @@ docker compose up --build
 
 Data (SQLite + OAuth tokens) is stored in `/data` inside the container and should be mounted to a host volume.
 
+## .env reference
+
+All configuration is driven by environment variables in `.env` (see `.env.example`).
+
+Required:
+
+- `YAHOO_EMAIL`: Your Yahoo email address used for IMAP login.
+- `YAHOO_APP_PASSWORD`: Yahoo app password (stored encrypted after first run).
+- `APP_MASTER_KEY`: 32‑byte base64 master key for encrypting stored secrets.
+- `GMAIL_OAUTH_CLIENT_ID`: OAuth client ID from Google Cloud.
+- `GMAIL_OAUTH_CLIENT_SECRET`: OAuth client secret from Google Cloud.
+- `GMAIL_OAUTH_REDIRECT_URI`: Redirect URI configured on the OAuth client.
+
+Optional / defaults:
+
+- `SQLITE_PATH` (default `/data/app.db`): SQLite DB path inside the container.
+- `YAHOO_IMAP_HOST` (default `imap.mail.yahoo.com`): IMAP hostname.
+- `YAHOO_IMAP_PORT` (default `993`): IMAP TLS port.
+- `GMAIL_LABEL` (default `yahoo`): Gmail label applied to inserted messages. Set empty to disable.
+- `DELIVER_TO_INBOX` (default `true`): Add INBOX label when inserting into Gmail.
+- `LOG_LEVEL` (default `INFO`): Log level (e.g., INFO, DEBUG).
+- `Y2G_DATA_PATH` (optional): Host path to bind‑mount to `/data` in Docker Compose.
+
 ## Notes
 
 - No backfill: only messages arriving after startup are forwarded.
