@@ -4,6 +4,34 @@ Yahoo → Gmail Forwarder (v1). Dockerized service that watches Yahoo IMAP (IDLE
 
 ## Quick start (v1)
 
+### Gmail API setup
+
+1) Create a Google Cloud project (or use an existing one).
+
+2) Enable the Gmail API for that project.
+
+3) Create an OAuth client (Desktop app or Web app):
+   - You will get a client ID and client secret (from the JSON client secrets).
+   - Set the redirect URI to match `GMAIL_OAUTH_REDIRECT_URI` (default example: `http://localhost`).
+   - Note the project ID (sometimes called "application ID" in the console) for your records.
+
+4) Copy the OAuth values into `.env`:
+   - `GMAIL_OAUTH_CLIENT_ID`
+   - `GMAIL_OAUTH_CLIENT_SECRET`
+   - `GMAIL_OAUTH_REDIRECT_URI`
+
+### Generate the master key
+
+The app encrypts stored secrets (Yahoo app password and OAuth tokens) using a 32-byte master key.
+
+Generate one (base64):
+
+```bash
+openssl rand -base64 32
+```
+
+Set it in `.env` as `APP_MASTER_KEY`.
+
 1) Copy env template:
 
 ```bash
@@ -19,6 +47,7 @@ python -m app.cmd.main oauth <AUTH_CODE>
 ```
 
 The command will log an authorization URL if you don’t already have one. Visit it, approve access, and paste the returned code.
+OAuth tokens are stored (encrypted) in the SQLite database.
 
 4) Run with Docker:
 
