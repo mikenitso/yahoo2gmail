@@ -113,7 +113,22 @@ def main() -> int:
         )
         if config.admin_enabled:
             while True:
-                time.sleep(60)
+                time.sleep(10)
+                try:
+                    creds = build_credentials(
+                        conn,
+                        master_key,
+                        config.gmail_oauth_client_id,
+                        config.gmail_oauth_client_secret,
+                        config.gmail_oauth_redirect_uri,
+                        alert_manager=alert_manager,
+                        logger=logger,
+                    )
+                    if creds:
+                        log_event(logger, "oauth_ready", "gmail oauth tokens available")
+                        break
+                except OAuthError:
+                    continue
         return 1
 
     service = build_service(creds)
