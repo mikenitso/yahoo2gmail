@@ -64,6 +64,54 @@ def _fetch_rfc822(client: YahooIMAPClient, mailbox: str, uid: int):
     return rfc822, flags_list, internal_value
 
 
+def _select_due_deletions(conn, limit: int = 50):
+    return conn.execute(
+        """
+        SELECT * FROM messages
+         WHERE state = 'INSERTED'
+           AND gmail_message_id IS NOT NULL
+           AND gmail_thread_id IS NOT NULL
+           AND yahoo_deleted_at IS NULL
+           AND (yahoo_delete_next_attempt_at IS NULL OR yahoo_delete_next_attempt_at <= ?)
+         ORDER BY (yahoo_delete_next_attempt_at IS NULL) DESC, yahoo_delete_next_attempt_at ASC, updated_at ASC
+         LIMIT ?
+        """,
+        (_utc_now_iso(), limit),
+    ).fetchall()
+
+
+def _mark_yahoo_deleted(conn, message_id: int) -> None:
+    now_iso = _utc_now_iso()
+    with conn:
+        conn.execute(
+            """
+            UPDATE messages
+               SET yahoo_deleted_at = ?,
+                   yahoo_delete_last_error = NULL,
+                   yahoo_delete_next_attempt_at = NULL,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (now_iso, now_iso, message_id),
+        )
+
+
+def _mark_yahoo_delete_failed(conn, message_id: int, last_error: str, next_attempt_at: str) -> None:
+    now_iso = _utc_now_iso()
+    with conn:
+        conn.execute(
+            """
+            UPDATE messages
+               SET yahoo_delete_attempt_count = yahoo_delete_attempt_count + 1,
+                   yahoo_delete_next_attempt_at = ?,
+                   yahoo_delete_last_error = ?,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (next_attempt_at, last_error, now_iso, message_id),
+        )
+
+
 def run_retry_loop(
     conn,
     gmail_service,
@@ -87,7 +135,8 @@ def run_retry_loop(
         )
     while True:
         rows = _select_due_messages(conn)
-        if not rows:
+        delete_rows = _select_due_deletions(conn)
+        if not rows and not delete_rows:
             time.sleep(poll_interval)
             continue
 
@@ -95,6 +144,7 @@ def run_retry_loop(
             message_id = row["id"]
             if not acquire_insert_lease(conn, message_id):
                 continue
+            imap_client: YahooIMAPClient | None = None
             try:
                 if logger:
                     log_event(
@@ -106,7 +156,7 @@ def run_retry_loop(
                         uid=row["uid"],
                         uidvalidity=row["uidvalidity"],
                     )
-                imap_client: YahooIMAPClient = imap_client_factory()
+                imap_client = imap_client_factory()
                 rfc822, flags_meta, _ = _fetch_rfc822(imap_client, row["mailbox_name"], row["uid"])
                 prepared = prepare_raw_message(
                     rfc822,
@@ -146,6 +196,34 @@ def run_retry_loop(
                         gmail_message_id=gmail_message_id,
                         gmail_thread_id=gmail_thread_id,
                     )
+                try:
+                    imap_client.delete_uid(row["mailbox_name"], row["uidvalidity"], row["uid"])
+                    _mark_yahoo_deleted(conn, message_id)
+                    if logger:
+                        log_event(
+                            logger,
+                            "yahoo_delete_success",
+                            "deleted yahoo message",
+                            correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                            mailbox=row["mailbox_name"],
+                            uid=row["uid"],
+                            uidvalidity=row["uidvalidity"],
+                        )
+                except Exception as exc:
+                    next_attempt = _next_attempt_at(row["yahoo_delete_attempt_count"])
+                    _mark_yahoo_delete_failed(conn, message_id, repr(exc), next_attempt)
+                    if logger:
+                        log_event(
+                            logger,
+                            "yahoo_delete_failure",
+                            "failed to delete yahoo message; retry scheduled",
+                            correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                            mailbox=row["mailbox_name"],
+                            uid=row["uid"],
+                            uidvalidity=row["uidvalidity"],
+                            error=repr(exc),
+                            next_attempt_at=next_attempt,
+                        )
             except Exception as exc:
                 if _is_retryable_error(exc):
                     next_attempt = _next_attempt_at(row["attempt_count"])
@@ -169,6 +247,54 @@ def run_retry_loop(
                             correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
                             error=repr(exc),
                         )
+            finally:
+                if imap_client:
+                    try:
+                        imap_client.close()
+                    except Exception:
+                        pass
+
+        for row in delete_rows:
+            message_id = row["id"]
+            imap_client: YahooIMAPClient = imap_client_factory()
+            try:
+                if logger:
+                    log_event(
+                        logger,
+                        "yahoo_delete_attempt",
+                        "deleting yahoo message",
+                        correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                        mailbox=row["mailbox_name"],
+                        uid=row["uid"],
+                        uidvalidity=row["uidvalidity"],
+                    )
+                imap_client.delete_uid(row["mailbox_name"], row["uidvalidity"], row["uid"])
+                _mark_yahoo_deleted(conn, message_id)
+                if logger:
+                    log_event(
+                        logger,
+                        "yahoo_delete_success",
+                        "deleted yahoo message",
+                        correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                        mailbox=row["mailbox_name"],
+                        uid=row["uid"],
+                        uidvalidity=row["uidvalidity"],
+                    )
+            except Exception as exc:
+                next_attempt = _next_attempt_at(row["yahoo_delete_attempt_count"])
+                _mark_yahoo_delete_failed(conn, message_id, repr(exc), next_attempt)
+                if logger:
+                    log_event(
+                        logger,
+                        "yahoo_delete_failure",
+                        "failed to delete yahoo message; retry scheduled",
+                        correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                        mailbox=row["mailbox_name"],
+                        uid=row["uid"],
+                        uidvalidity=row["uidvalidity"],
+                        error=repr(exc),
+                        next_attempt_at=next_attempt,
+                    )
             finally:
                 try:
                     imap_client.close()

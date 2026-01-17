@@ -63,8 +63,8 @@ class YahooIMAPClient:
                     mailboxes.append(mailbox)
         return mailboxes
 
-    def select(self, mailbox: str) -> Tuple[int, int]:
-        status, data = self.imap.select(f'"{mailbox}"', readonly=True)
+    def select(self, mailbox: str, readonly: bool = True) -> Tuple[int, int]:
+        status, data = self.imap.select(f'"{mailbox}"', readonly=readonly)
         if status != "OK":
             raise YahooIMAPError(f"SELECT failed for {mailbox}")
         uidvalidity = self._extract_uidvalidity_from_select(data)
@@ -159,6 +159,17 @@ class YahooIMAPClient:
         if not rfc822:
             raise YahooIMAPError("RFC822 body missing")
         return rfc822, flags, internaldate
+
+    def delete_uid(self, mailbox: str, uidvalidity: int, uid: int) -> None:
+        current_uidvalidity, _ = self.select(mailbox, readonly=False)
+        if current_uidvalidity != uidvalidity:
+            raise YahooIMAPError("UIDVALIDITY changed; refusing to delete")
+        status, _ = self.imap.uid("STORE", str(uid), "+FLAGS.SILENT", r"(\\Deleted)")
+        if status != "OK":
+            raise YahooIMAPError("UID STORE \\Deleted failed")
+        status, _ = self.imap.expunge()
+        if status != "OK":
+            raise YahooIMAPError("EXPUNGE failed")
 
     def idle_wait(self, timeout_seconds: int = 60) -> Optional[bytes]:
         if not self.has_idle():
