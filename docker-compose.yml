@@ -16,6 +16,9 @@ services:
       - DELIVER_TO_INBOX=${DELIVER_TO_INBOX}
       - LOG_LEVEL=${LOG_LEVEL}
       - Y2G_DATA_PATH=${Y2G_DATA_PATH}
+      - ADMIN_ENABLED=${ADMIN_ENABLED}
+      - ADMIN_HOST=${ADMIN_HOST}
+      - ADMIN_PORT=${ADMIN_PORT}
     ports:
       - "8787:8787"
     volumes:
