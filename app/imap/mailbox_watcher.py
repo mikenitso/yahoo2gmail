@@ -1,4 +1,5 @@
 import hashlib
+import imaplib
 import json
 import time
 from email.parser import BytesParser
@@ -211,6 +212,17 @@ def watch_mailbox(
     if last_seen is None:
         uidvalidity, last_seen = initialize_mailbox_state(client, conn, account_id, mailbox)
 
+    # Startup catch-up to process messages received while the watcher was down.
+    last_seen = process_new_messages(
+        client,
+        conn,
+        account_id,
+        mailbox,
+        uidvalidity,
+        last_seen,
+        logger=logger,
+    )
+
     while True:
         try:
             if client.has_idle():
@@ -272,6 +284,31 @@ def watch_mailbox(
                     last_seen,
                     logger=logger,
                 )
+        except (OSError, imaplib.IMAP4.abort, imaplib.IMAP4.error) as exc:
+            if logger:
+                log_event(
+                    logger,
+                    "imap_error",
+                    "imap socket error, reconnecting",
+                    correlation_id=f"{mailbox}|{uidvalidity}|{last_seen}",
+                    mailbox=mailbox,
+                    error=str(exc),
+                )
+            try:
+                client.close()
+                client.connect()
+                uidvalidity, _ = client.select(mailbox)
+                if logger:
+                    log_event(
+                        logger,
+                        "imap_reconnect",
+                        "imap reconnected",
+                        correlation_id=f"{mailbox}|{uidvalidity}|{last_seen}",
+                        mailbox=mailbox,
+                    )
+            except YahooIMAPError:
+                pass
+            time.sleep(poll_interval)
         except YahooIMAPError as exc:
             if logger:
                 log_event(
