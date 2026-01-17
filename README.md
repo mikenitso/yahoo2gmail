@@ -1,6 +1,21 @@
 # yahoo2gmail-forwarder
 
-Yahoo → Gmail Forwarder (v1). Dockerized service that watches Yahoo IMAP (IDLE), fetches raw RFC822, and inserts into Gmail via Gmail API with exactly-once semantics.
+Yahoo → Gmail Forwarder (v1). A self‑hosted bridge that watches Yahoo IMAP, fetches raw RFC822, and inserts messages into Gmail via the Gmail API with exactly‑once semantics.
+
+## Why this exists
+
+Yahoo does not provide reliable, free forwarding for all accounts and folders (especially spam/bulk). Gmailify used to solve this by syncing Yahoo into Gmail, but it is no longer available for many Yahoo accounts and doesn’t offer a self‑hosted path.
+
+This project replaces the **forwarding** portion of Gmailify:
+- It pulls mail from Yahoo (including spam/bulk) and inserts it into Gmail with original headers intact.
+- It preserves threading by keeping Message‑ID / In‑Reply‑To / References.
+- It avoids duplicates across restarts using SQLite state.
+
+What it does **not** yet do:
+- Two‑way sync (Gmail → Yahoo changes like read state, deletes, labels).
+- Full bidirectional reconciliation.
+
+So this is a solid **one‑way bridge** that gets you most of the benefit of Gmailify for inbound Yahoo mail, while leaving two‑way sync as future work.
 
 ## Quick start (v1)
 
