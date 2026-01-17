@@ -74,6 +74,18 @@ def main() -> int:
         config.pushover_cooldown_minutes,
     )
 
+    if config.admin_enabled:
+        start_admin_server(
+            config.admin_host,
+            config.admin_port,
+            conn_factory=lambda: connect(config.sqlite_path),
+            master_key=master_key,
+            logger=logger,
+            oauth_client_id=config.gmail_oauth_client_id,
+            oauth_client_secret=config.gmail_oauth_client_secret,
+            oauth_redirect_uri=config.gmail_oauth_redirect_uri,
+        )
+
     try:
         creds = build_credentials(
             conn,
@@ -91,6 +103,13 @@ def main() -> int:
             config.gmail_oauth_redirect_uri,
         )
         log_event(logger, "oauth_missing", "gmail oauth tokens missing", auth_url=auth_url)
+        alert_manager.send(
+            conn,
+            "oauth_missing",
+            "Gmail OAuth tokens missing",
+            f"Tokens missing. Re-authorize via admin UI. Auth URL: {auth_url}",
+            logger=logger,
+        )
         return 1
 
     service = build_service(creds)
@@ -123,18 +142,6 @@ def main() -> int:
     log_event(logger, "mailboxes", "watching mailboxes", mailboxes=watch_mailboxes)
 
     conn.close()
-
-    if config.admin_enabled:
-        start_admin_server(
-            config.admin_host,
-            config.admin_port,
-            conn_factory=lambda: connect(config.sqlite_path),
-            master_key=master_key,
-            logger=logger,
-            oauth_client_id=config.gmail_oauth_client_id,
-            oauth_client_secret=config.gmail_oauth_client_secret,
-            oauth_redirect_uri=config.gmail_oauth_redirect_uri,
-        )
 
     run(
         account_id,
