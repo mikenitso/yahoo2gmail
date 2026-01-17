@@ -164,7 +164,7 @@ class YahooIMAPClient:
         current_uidvalidity, _ = self.select(mailbox, readonly=False)
         if current_uidvalidity != uidvalidity:
             raise YahooIMAPError("UIDVALIDITY changed; refusing to delete")
-        status, _ = self.imap.uid("STORE", str(uid), "+FLAGS.SILENT", r"(\\Deleted)")
+        status, _ = self.imap.uid("STORE", str(uid), "+FLAGS.SILENT", r"(\Deleted)")
         if status != "OK":
             raise YahooIMAPError("UID STORE \\Deleted failed")
         status, _ = self.imap.expunge()
