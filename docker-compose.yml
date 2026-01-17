@@ -1,0 +1,8 @@
+services:
+  yahoo2gmail-forwarder:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
