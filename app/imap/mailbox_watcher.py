@@ -89,6 +89,19 @@ def _get_last_seen(conn, account_id: int, name: str) -> Optional[int]:
     return int(row[0]) if row else None
 
 
+def _get_mailbox_state(conn, account_id: int, name: str) -> Optional[Tuple[int, int]]:
+    row = conn.execute(
+        """
+        SELECT uidvalidity, last_seen_uid FROM mailboxes
+         WHERE account_id = ? AND name = ?
+        """,
+        (account_id, name),
+    ).fetchone()
+    if not row:
+        return None
+    return int(row[0]), int(row[1])
+
+
 def _store_message(
     conn,
     account_id: int,
@@ -208,9 +221,24 @@ def watch_mailbox(
             correlation_id=f"{mailbox}|{uidvalidity}|0",
             mailbox=mailbox,
         )
-    last_seen = _get_last_seen(conn, account_id, mailbox)
-    if last_seen is None:
+    stored = _get_mailbox_state(conn, account_id, mailbox)
+    if stored is None:
         uidvalidity, last_seen = initialize_mailbox_state(client, conn, account_id, mailbox)
+    else:
+        stored_uidvalidity, last_seen = stored
+        if stored_uidvalidity != uidvalidity:
+            if logger:
+                log_event(
+                    logger,
+                    "imap_uidvalidity_reset",
+                    "uidvalidity changed; resetting last_seen_uid",
+                    correlation_id=f"{mailbox}|{uidvalidity}|0",
+                    mailbox=mailbox,
+                    old_uidvalidity=stored_uidvalidity,
+                    new_uidvalidity=uidvalidity,
+                )
+            _get_or_create_mailbox(conn, account_id, mailbox, uidvalidity, 0)
+            last_seen = 0
 
     # Startup catch-up to process messages received while the watcher was down.
     last_seen = process_new_messages(
