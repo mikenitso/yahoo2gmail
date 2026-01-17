@@ -9,6 +9,7 @@ from app.gmail.oauth import OAuthError, build_credentials, exchange_code_for_tok
 from app.imap.mailbox_watcher import discover_mailboxes
 from app.imap.yahoo_client import YahooIMAPClient, load_or_store_app_password
 from app.log.logger import get_logger, log_event
+from app.notify.manager import AlertManager
 from app.store.db import connect
 from app.store.migrations import apply_migrations
 from app.sync.orchestrator import run
@@ -66,6 +67,13 @@ def main() -> int:
             return 0
         return 1
 
+    alert_manager = AlertManager(
+        config.pushover_enabled,
+        config.pushover_api_token,
+        config.pushover_user_key,
+        config.pushover_cooldown_minutes,
+    )
+
     try:
         creds = build_credentials(
             conn,
@@ -73,6 +81,8 @@ def main() -> int:
             config.gmail_oauth_client_id,
             config.gmail_oauth_client_secret,
             config.gmail_oauth_redirect_uri,
+            alert_manager=alert_manager,
+            logger=logger,
         )
     except OAuthError:
         auth_url, _ = get_authorization_url(
@@ -138,6 +148,7 @@ def main() -> int:
         watch_mailboxes,
         logger=logger,
         conn_factory=lambda: connect(config.sqlite_path),
+        alert_manager=alert_manager,
     )
     return 0
 

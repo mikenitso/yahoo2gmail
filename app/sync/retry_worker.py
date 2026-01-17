@@ -124,6 +124,7 @@ def run_retry_loop(
     account_id: int,
     poll_interval: int = 10,
     logger=None,
+    alert_manager=None,
 ):
     recovered = recover_stuck_insertions(conn)
     if logger and recovered:
@@ -225,6 +226,16 @@ def run_retry_loop(
                             next_attempt_at=next_attempt,
                         )
             except Exception as exc:
+                if HttpError and isinstance(exc, HttpError):
+                    status = getattr(exc.resp, "status", None)
+                    if status in {401, 403} and alert_manager:
+                        alert_manager.send(
+                            conn,
+                            "oauth_invalid",
+                            "Gmail OAuth token invalid",
+                            f"Gmail API returned {status}. Re-authorize via admin UI.",
+                            logger=logger,
+                        )
                 if _is_retryable_error(exc):
                     next_attempt = _next_attempt_at(row["attempt_count"])
                     mark_failed_retry(conn, message_id, repr(exc), next_attempt)

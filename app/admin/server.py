@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 
 from app.gmail.oauth import exchange_code_for_tokens, get_authorization_url, load_tokens
 from app.log.logger import get_recent_log_lines, log_event
+from app.notify import alerts
 
 
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
@@ -74,12 +75,14 @@ def _fetch_status(conn, master_key: bytes) -> dict:
          LIMIT 1
         """
     ).fetchone()
+    recent_alerts = alerts.get_recent_alerts(conn, limit=10)
     return {
         "token": token,
         "last_insert": last_insert,
         "last_delete": last_delete,
         "last_error": last_error,
         "last_delete_error": last_delete_error,
+        "alerts": recent_alerts,
     }
 
 
@@ -91,6 +94,7 @@ def _row_to_text(row) -> str:
 
 def _render_page(status: dict, logs: list[str], auth_url: Optional[str], message: Optional[str]) -> bytes:
     logs_text = "\n".join(logs)
+    alerts_text = "\n".join(" | ".join(str(v) for v in row) for row in status["alerts"])
     html_body = f"""<!doctype html>
 <html>
   <head>
@@ -133,6 +137,10 @@ def _render_page(status: dict, logs: list[str], auth_url: Optional[str], message
     <div class="section">
       <h2>Recent logs (last 20)</h2>
       <pre>{html.escape(logs_text)}</pre>
+    </div>
+    <div class="section">
+      <h2>Recent alerts (last 10)</h2>
+      <pre>{html.escape(alerts_text)}</pre>
     </div>
   </body>
 </html>

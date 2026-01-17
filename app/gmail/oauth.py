@@ -50,6 +50,8 @@ def build_credentials(
     client_id: str,
     client_secret: str,
     redirect_uri: str,
+    alert_manager=None,
+    logger=None,
 ) -> Credentials:
     token_dict = load_tokens(conn, master_key)
     if not token_dict:
@@ -59,7 +61,18 @@ def build_credentials(
     if creds.valid:
         return creds
     if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        try:
+            creds.refresh(Request())
+        except Exception as exc:
+            if alert_manager:
+                alert_manager.send(
+                    conn,
+                    "oauth_invalid",
+                    "Gmail OAuth refresh failed",
+                    f"Refresh token failed: {exc}. Re-authorize via admin UI.",
+                    logger=logger,
+                )
+            raise
         save_tokens(conn, master_key, {
             "token": creds.token,
             "refresh_token": creds.refresh_token,

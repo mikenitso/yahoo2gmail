@@ -21,6 +21,10 @@ class AppConfig:
     admin_enabled: bool
     admin_host: str
     admin_port: int
+    pushover_enabled: bool
+    pushover_user_key: str | None
+    pushover_api_token: str | None
+    pushover_cooldown_minutes: int
 
 
 class ConfigError(Exception):
@@ -104,6 +108,10 @@ def load_config() -> AppConfig:
         admin_enabled=_get_bool("ADMIN_ENABLED", False),
         admin_host=_get_env("ADMIN_HOST", "0.0.0.0") or "0.0.0.0",
         admin_port=_get_int("ADMIN_PORT", 8787),
+        pushover_enabled=_get_bool("PUSHOVER_ENABLED", False),
+        pushover_user_key=_get_env("PUSHOVER_USER_KEY"),
+        pushover_api_token=_get_env("PUSHOVER_API_TOKEN"),
+        pushover_cooldown_minutes=_get_int("PUSHOVER_COOLDOWN_MINUTES", 360),
     )
 
 
@@ -125,4 +133,6 @@ def config_summary(config: AppConfig) -> dict:
         "admin_enabled": config.admin_enabled,
         "admin_host": config.admin_host,
         "admin_port": config.admin_port,
+        "pushover_enabled": config.pushover_enabled,
+        "pushover_cooldown_minutes": config.pushover_cooldown_minutes,
     }

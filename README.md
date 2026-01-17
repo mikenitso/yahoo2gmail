@@ -94,6 +94,10 @@ Optional / defaults:
 - `ADMIN_ENABLED` (default `false`): Enable the admin UI.
 - `ADMIN_HOST` (default `0.0.0.0`): Bind address for the admin UI.
 - `ADMIN_PORT` (default `8787`): Port for the admin UI.
+- `PUSHOVER_ENABLED` (default `false`): Enable Pushover alerts.
+- `PUSHOVER_API_TOKEN`: Pushover application API token.
+- `PUSHOVER_USER_KEY`: Pushover user key.
+- `PUSHOVER_COOLDOWN_MINUTES` (default `360`): Minimum minutes between repeated alerts.
 
 ## Notes
 

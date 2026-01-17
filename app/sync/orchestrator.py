@@ -92,6 +92,7 @@ def run(
     watch_mailboxes: List[str],
     logger=None,
     conn_factory=None,
+    alert_manager=None,
 ):
     if conn_factory is None:
         raise ValueError("conn_factory is required")
@@ -113,6 +114,7 @@ def run(
         imap_client_factory,
         account_id,
         logger=logger,
+        alert_manager=alert_manager,
     )
     for t in threads:
         t.join()
