@@ -12,6 +12,7 @@ from app.log.logger import get_logger, log_event
 from app.store.db import connect
 from app.store.migrations import apply_migrations
 from app.sync.orchestrator import run
+from app.admin.server import start_admin_server
 
 
 def _ensure_account(conn, yahoo_email: str, gmail_user: str) -> int:
@@ -112,6 +113,18 @@ def main() -> int:
     log_event(logger, "mailboxes", "watching mailboxes", mailboxes=watch_mailboxes)
 
     conn.close()
+
+    if config.admin_enabled:
+        start_admin_server(
+            config.admin_host,
+            config.admin_port,
+            conn_factory=lambda: connect(config.sqlite_path),
+            master_key=master_key,
+            logger=logger,
+            oauth_client_id=config.gmail_oauth_client_id,
+            oauth_client_secret=config.gmail_oauth_client_secret,
+            oauth_redirect_uri=config.gmail_oauth_redirect_uri,
+        )
 
     run(
         account_id,

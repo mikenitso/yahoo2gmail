@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -24,6 +25,25 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, separators=(",", ":"))
 
 
+_RECENT_LOG_LINES = deque(maxlen=200)
+
+
+class RingBufferHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            _RECENT_LOG_LINES.append(msg)
+        except Exception:
+            pass
+
+
+def get_recent_log_lines(limit: int = 20) -> list[str]:
+    if limit <= 0:
+        return []
+    items = list(_RECENT_LOG_LINES)
+    return items[-limit:]
+
+
 def get_logger(name: str, level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
@@ -32,6 +52,9 @@ def get_logger(name: str, level: str = "INFO") -> logging.Logger:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     logger.addHandler(handler)
+    ring = RingBufferHandler()
+    ring.setFormatter(JsonFormatter())
+    logger.addHandler(ring)
     logger.propagate = False
     return logger
 

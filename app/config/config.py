@@ -18,6 +18,9 @@ class AppConfig:
     sqlite_path: str
     app_master_key: str
     log_level: str
+    admin_enabled: bool
+    admin_host: str
+    admin_port: int
 
 
 class ConfigError(Exception):
@@ -98,6 +101,9 @@ def load_config() -> AppConfig:
         sqlite_path=_get_env("SQLITE_PATH", "/data/app.db"),
         app_master_key=app_master_key,
         log_level=_get_env("LOG_LEVEL", "INFO"),
+        admin_enabled=_get_bool("ADMIN_ENABLED", False),
+        admin_host=_get_env("ADMIN_HOST", "0.0.0.0") or "0.0.0.0",
+        admin_port=_get_int("ADMIN_PORT", 8787),
     )
 
 
@@ -116,4 +122,7 @@ def config_summary(config: AppConfig) -> dict:
         "sqlite_path": config.sqlite_path,
         "app_master_key": "set" if config.app_master_key else "not_set",
         "log_level": config.log_level,
+        "admin_enabled": config.admin_enabled,
+        "admin_host": config.admin_host,
+        "admin_port": config.admin_port,
     }

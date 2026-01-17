@@ -32,6 +32,18 @@ openssl rand -base64 32
 
 Set it in `.env` as `APP_MASTER_KEY`.
 
+### Admin UI (optional)
+
+Set `ADMIN_ENABLED=true` to start a small LAN-only admin UI inside the container.
+By default it binds to `0.0.0.0:8787`.
+
+The UI provides:
+- Status (last insert, last Yahoo delete, token validity, last errors)
+- Recent logs (last 20 lines, from an in-memory buffer)
+- OAuth flow: generate auth URL and exchange a full redirect URL
+
+If you expose it beyond your LAN, add a reverse proxy with authentication.
+
 1) Copy env template:
 
 ```bash
@@ -79,6 +91,9 @@ Optional / defaults:
 - `DELIVER_TO_INBOX` (default `true`): Add INBOX label when inserting into Gmail.
 - `LOG_LEVEL` (default `INFO`): Log level (e.g., INFO, DEBUG).
 - `Y2G_DATA_PATH` (optional): Host path to bind‑mount to `/data` in Docker Compose.
+- `ADMIN_ENABLED` (default `false`): Enable the admin UI.
+- `ADMIN_HOST` (default `0.0.0.0`): Bind address for the admin UI.
+- `ADMIN_PORT` (default `8787`): Port for the admin UI.
 
 ## Notes
 
