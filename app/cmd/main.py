@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 from app.config.config import ConfigError, config_summary, load_config
 from app.crypto.secretbox import load_master_key
@@ -110,6 +111,9 @@ def main() -> int:
             f"Tokens missing. Re-authorize via admin UI. Auth URL: {auth_url}",
             logger=logger,
         )
+        if config.admin_enabled:
+            while True:
+                time.sleep(60)
         return 1
 
     service = build_service(creds)
