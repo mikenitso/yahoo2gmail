@@ -39,7 +39,7 @@ def _token_status(conn, master_key: bytes) -> dict:
 
 def _fetch_status(conn, master_key: bytes) -> dict:
     token = _token_status(conn, master_key)
-    last_insert = conn.execute(
+    last_import = conn.execute(
         """
         SELECT mailbox_name, uidvalidity, uid, gmail_message_id, updated_at
           FROM messages
@@ -78,7 +78,7 @@ def _fetch_status(conn, master_key: bytes) -> dict:
     recent_alerts = alerts.get_recent_alerts(conn, limit=10)
     return {
         "token": token,
-        "last_insert": last_insert,
+        "last_import": last_import,
         "last_delete": last_delete,
         "last_error": last_error,
         "last_delete_error": last_delete_error,
@@ -117,7 +117,7 @@ def _render_page(status: dict, logs: list[str], auth_url: Optional[str], message
       <div><span class="label">Token:</span> {html.escape(status["token"]["status"])}</div>
       <div><span class="label">Token expiry:</span> {html.escape(str(status["token"]["expiry"]))}</div>
       <div><span class="label">Refresh token present:</span> {status["token"]["refresh_token"]}</div>
-      <div><span class="label">Last insert:</span> {html.escape(_row_to_text(status["last_insert"]))}</div>
+      <div><span class="label">Last import:</span> {html.escape(_row_to_text(status["last_import"]))}</div>
       <div><span class="label">Last Yahoo delete:</span> {html.escape(_row_to_text(status["last_delete"]))}</div>
       <div><span class="label">Last error:</span> {html.escape(_row_to_text(status["last_error"]))}</div>
       <div><span class="label">Last Yahoo delete error:</span> {html.escape(_row_to_text(status["last_delete_error"]))}</div>

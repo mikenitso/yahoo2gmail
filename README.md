@@ -1,19 +1,22 @@
 # yahoo2gmail-forwarder
 
-Yahoo → Gmail Forwarder (v1). A self‑hosted bridge that watches Yahoo IMAP, fetches raw RFC822, and inserts messages into Gmail via the Gmail API with exactly‑once semantics.
+Yahoo → Gmail Forwarder (v1). A self‑hosted bridge that watches Yahoo IMAP, fetches raw RFC822, and imports messages into Gmail via the Gmail API with exactly‑once semantics.
 
 ## Why this exists
 
 Yahoo does not provide reliable, free forwarding for all accounts and folders (especially spam/bulk). Gmailify used to solve this by syncing Yahoo into Gmail, but it is no longer available for many Yahoo accounts and doesn’t offer a self‑hosted path.
 
 This project replaces the **forwarding** portion of Gmailify:
-- It pulls mail from Yahoo (including spam/bulk) and inserts it into Gmail with original headers intact.
+- It pulls mail from Yahoo (including spam/bulk) and imports it into Gmail with original headers intact.
 - It preserves threading by keeping Message‑ID / In‑Reply‑To / References.
 - It avoids duplicates across restarts using SQLite state.
 
 What it does **not** yet do:
 - Two‑way sync (Gmail → Yahoo changes like read state, deletes, labels).
 - Full bidirectional reconciliation.
+
+Gmail processing note:
+- Messages are imported via `users.messages.import`, so Gmail can apply spam filtering, categories, and user filters. Placement may change even if INBOX is requested.
 
 So this is a solid **one‑way bridge** that gets you most of the benefit of Gmailify for inbound Yahoo mail, while leaving two‑way sync as future work.
 
@@ -53,7 +56,7 @@ Set `ADMIN_ENABLED=true` to start a small LAN-only admin UI inside the container
 By default it binds to `0.0.0.0:8787`.
 
 The UI provides:
-- Status (last insert, last Yahoo delete, token validity, last errors)
+- Status (last import, last Yahoo delete, token validity, last errors)
 - Recent logs (last 20 lines, from an in-memory buffer)
 - OAuth flow: generate auth URL and exchange a full redirect URL
 
@@ -102,8 +105,8 @@ Optional / defaults:
 - `SQLITE_PATH` (default `/data/app.db`): SQLite DB path inside the container.
 - `YAHOO_IMAP_HOST` (default `imap.mail.yahoo.com`): IMAP hostname.
 - `YAHOO_IMAP_PORT` (default `993`): IMAP TLS port.
-- `GMAIL_LABEL` (default `yahoo`): Gmail label applied to inserted messages. Set empty to disable.
-- `DELIVER_TO_INBOX` (default `true`): Add INBOX label when inserting into Gmail.
+- `GMAIL_LABEL` (default `yahoo`): Gmail label applied to imported messages. Set empty to disable.
+- `DELIVER_TO_INBOX` (default `true`): Add INBOX label when importing into Gmail.
 - `LOG_LEVEL` (default `INFO`): Log level (e.g., INFO, DEBUG).
 - `Y2G_DATA_PATH` (optional): Host path to bind‑mount to `/data` in Docker Compose.
 - `ADMIN_ENABLED` (default `false`): Enable the admin UI.

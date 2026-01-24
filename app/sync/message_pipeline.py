@@ -5,7 +5,7 @@ from email.parser import BytesParser
 from email.policy import default
 from typing import Dict, List, Tuple
 
-from app.gmail.gmail_client import insert_raw_message
+from app.gmail.gmail_client import import_raw_message
 
 
 class PipelineError(Exception):
@@ -83,7 +83,7 @@ def prepare_raw_message(
     return add_headers(raw_bytes, headers)
 
 
-def insert_message(
+def import_message(
     service,
     user_id: str,
     raw_bytes: bytes,
@@ -101,4 +101,4 @@ def insert_message(
         label_ids.append(inbox_label_id)
     if not _extract_seen_flag(flags_json):
         label_ids.append(unread_label_id)
-    return insert_raw_message(service, user_id, raw_bytes, label_ids, thread_id=thread_id)
+    return import_raw_message(service, user_id, raw_bytes, label_ids, thread_id=thread_id)

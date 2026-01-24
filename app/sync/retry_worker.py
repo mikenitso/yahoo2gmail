@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.imap.yahoo_client import YahooIMAPClient
 from app.store.lease import acquire_insert_lease, mark_failed_perm, mark_failed_retry, mark_inserted, recover_stuck_insertions
 from app.gmail.gmail_client import find_thread_id_by_rfc822msgid
-from app.sync.message_pipeline import extract_in_reply_to, extract_references, insert_message, prepare_raw_message
+from app.sync.message_pipeline import extract_in_reply_to, extract_references, import_message, prepare_raw_message
 from app.log.logger import log_event
 
 try:
@@ -131,7 +131,7 @@ def run_retry_loop(
         log_event(
             logger,
             "lease_recover",
-            "recovered stuck insertions",
+            "recovered stuck imports",
             recovered=recovered,
         )
     while True:
@@ -150,8 +150,8 @@ def run_retry_loop(
                 if logger:
                     log_event(
                         logger,
-                        "insert_attempt",
-                        "insert lease acquired",
+                        "import_attempt",
+                        "import lease acquired",
                         correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
                         mailbox=row["mailbox_name"],
                         uid=row["uid"],
@@ -176,7 +176,7 @@ def run_retry_loop(
                         thread_id = find_thread_id_by_rfc822msgid(gmail_service, gmail_user_id, ref)
                         if thread_id:
                             break
-                gmail_message_id, gmail_thread_id = insert_message(
+                gmail_message_id, gmail_thread_id = import_message(
                     gmail_service,
                     gmail_user_id,
                     prepared,
@@ -191,8 +191,8 @@ def run_retry_loop(
                 if logger:
                     log_event(
                         logger,
-                        "insert_success",
-                        "inserted into gmail",
+                        "import_success",
+                        "imported into gmail",
                         correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
                         gmail_message_id=gmail_message_id,
                         gmail_thread_id=gmail_thread_id,
@@ -242,8 +242,8 @@ def run_retry_loop(
                     if logger:
                         log_event(
                             logger,
-                            "insert_failure",
-                            "insert failed, retry scheduled",
+                            "import_failure",
+                            "import failed, retry scheduled",
                             correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
                             error=repr(exc),
                             next_attempt_at=next_attempt,
@@ -253,8 +253,8 @@ def run_retry_loop(
                     if logger:
                         log_event(
                             logger,
-                            "insert_failure_perm",
-                            "insert failed permanently",
+                            "import_failure_perm",
+                            "import failed permanently",
                             correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
                             error=repr(exc),
                         )

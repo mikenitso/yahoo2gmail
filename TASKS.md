@@ -16,7 +16,7 @@
 4. Gmail integration
    - [x] OAuth consent flow + token storage
    - [x] Ensure label exists (create if missing)
-   - [x] Insert raw RFC822 using users.messages.insert with labelIds (INBOX + yahoo label + UNREAD as needed)
+   - [x] Import raw RFC822 using users.messages.import with labelIds (INBOX + yahoo label + UNREAD as needed)
 
 5. Yahoo IMAP integration
    - [x] IMAP TLS connection + LOGIN using app password (stored encrypted after bootstrap)
@@ -47,7 +47,7 @@ Definition of done:
    - [x] Startup catch-up scan on watcher start (still no backfill beyond stored last_seen_uid)
    - [x] UIDVALIDITY change detection and reset
    - [x] IMAP resilience improvements (watcher restart loop, longer IDLE, reconnect on IDLE end, tolerate EOF on logout)
-   - [x] Yahoo hard-delete after successful Gmail insert + catch-up deletes with retry/backoff
+   - [x] Yahoo hard-delete after successful Gmail import + catch-up deletes with retry/backoff
    - [x] Admin UI (LAN-only) for status, logs, and OAuth refresh
    - [x] Pushover alerts on OAuth failures + alert history in admin UI
    - [x] README expanded with Gmail API setup, master key generation, env reference, and project rationale

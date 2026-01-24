@@ -11,12 +11,13 @@ def build_service(credentials):
     return build("gmail", "v1", credentials=credentials, cache_discovery=False)
 
 
-def insert_raw_message(
+def import_raw_message(
     service,
     user_id: str,
     raw_bytes: bytes,
     label_ids: list[str],
     thread_id: str | None = None,
+    internal_date_source: str | None = "dateHeader",
 ):
     raw_b64 = base64.urlsafe_b64encode(raw_bytes).decode("utf-8")
     body = {
@@ -28,7 +29,7 @@ def insert_raw_message(
     result = (
         service.users()
         .messages()
-        .insert(userId=user_id, body=body)
+        .import_(userId=user_id, body=body, internalDateSource=internal_date_source)
         .execute()
     )
     return result.get("id"), result.get("threadId")

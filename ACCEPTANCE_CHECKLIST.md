@@ -18,7 +18,7 @@
    - Verify it appears in Gmail and opens.
 
 5) Spam
-   - Ensure a message landing in Yahoo Bulk/Spam is inserted into Gmail.
+   - Ensure a message landing in Yahoo Bulk/Spam is imported into Gmail.
    - Confirm Gmail can auto-classify it (no special handling).
 
 6) Exactly-once under restart
@@ -27,4 +27,4 @@
 
 7) Failure + retry
    - Block outbound network temporarily.
-   - Confirm failures logged and retries occur; eventually messages insert.
+   - Confirm failures logged and retries occur; eventually messages import.
