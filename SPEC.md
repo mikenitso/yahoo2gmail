@@ -6,7 +6,7 @@ Build a Dockerized service that:
 	•	Connects to Yahoo via IMAP over TLS using an app password
 	•	Uses IMAP IDLE to detect new messages in near real-time
 	•	Fetches each new email as raw RFC822 bytes (preserve MIME exactly)
-	•	Imports the email into Gmail via Gmail API (users.messages.import) unchanged
+	•	Inserts the email into Gmail via Gmail API (users.messages.insert) unchanged
 	•	Applies a Gmail label (default: yahoo) and places it in INBOX
 	•	Lets Gmail auto-classify messages into its categories/spam (no special handling)
 	•	Ensures exactly-once semantics using SQLite state + leases + dedupe keys
@@ -23,12 +23,12 @@ Build a Dockerized service that:
 	•	Must not rely on Yahoo’s paid forwarding.
 	2.	Forward every message from watched mailboxes (no filters).
 	3.	Preserve full fidelity:
-	•	Import raw RFC822 unchanged (HTML, inline images, attachments intact).
+	•	Insert raw RFC822 unchanged (HTML, inline images, attachments intact).
 	4.	Preserve original sender and threading in Gmail:
 	•	Keep original headers (Message-ID, In-Reply-To, References, Subject, Date).
-	5.	Gmail import:
+	5.	Gmail insertion:
 	•	Use Gmail API with OAuth consent.
-	•	Message must arrive in INBOX and get label yahoo (configurable), but Gmail may re-classify or move it.
+	•	Message must arrive in INBOX and get label yahoo (configurable).
 	6.	Exactly-once semantics:
 	•	No duplicates across restarts, network failures, partial crashes.
 	7.	Retry on failure with exponential backoff; log failures.
@@ -113,7 +113,7 @@ Mailbox selection:
 4) Gmail API behavior
 
 4.1 OAuth scopes (minimum)
-	•	https://www.googleapis.com/auth/gmail.insert (required for import)
+	•	https://www.googleapis.com/auth/gmail.insert
 	•	https://www.googleapis.com/auth/gmail.labels (to create/find label)
 
 (If library requires broader but still safe, document why.)
@@ -124,21 +124,20 @@ Mailbox selection:
 	•	If missing, create it
 	•	Cache labelId in SQLite table gmail_labels
 
-4.3 Import call
+4.3 Insert call
 
-Use users.messages.import with:
+Use users.messages.insert with:
 	•	raw: base64url(RFC822 bytes)
 	•	labelIds: include
 	•	INBOX if DELIVER_TO_INBOX=true
 	•	<labelId for yahoo>
 	•	UNREAD if Yahoo flags do NOT include \Seen
-	•	internalDateSource: dateHeader
 
 Store returned IDs:
 	•	Gmail id → gmail_message_id
 	•	Gmail threadId → gmail_thread_id
 
-Do not use send endpoint (no SMTP sending) because we want import semantics, Gmail processing, and thread/header preservation.
+Do not use send endpoint (no SMTP sending) because we want import semantics and thread/header preservation.
 
 ⸻
 
@@ -213,7 +212,7 @@ gmail_labels(account_id, label_name, label_id)
 
 7.2 Lease / atomic transition
 
-To begin import (INSERTING state):
+To begin insertion:
 	•	Transaction:
 	•	UPDATE messages SET state='INSERTING', updated_at=now WHERE id=? AND state IN ('FETCHED','FAILED_RETRY') AND (next_attempt_at IS NULL OR next_attempt_at <= now);
 	•	Only proceed if affected rows == 1.
@@ -229,7 +228,7 @@ On failure:
 
 7.4 Future-proof headers (must add, non-visible)
 
-Before importing into Gmail, add headers without changing body/MIME:
+Before inserting into Gmail, add headers without changing body/MIME:
 	•	X-Y2G-Source: yahoo
 	•	X-Y2G-Mailbox: <mailbox_name>
 	•	X-Y2G-UIDValidity: <uidvalidity>
@@ -271,9 +270,9 @@ Exponential with cap + jitter:
 	•	IDLE connect/disconnect/reconnect
 	•	Message discovered (mailbox, uidvalidity, uid)
 	•	Message fetched (size, sha256, message-id)
-	•	Import attempt (lease acquired)
-	•	Import success (gmail_message_id, threadId)
-	•	Import failure (error class/status, retry schedule)
+	•	Insert attempt (lease acquired)
+	•	Insert success (gmail_message_id, threadId)
+	•	Insert failure (error class/status, retry schedule)
 	•	SQLite migration status
 
 9.3 Correlation IDs
@@ -307,13 +306,13 @@ Exponential with cap + jitter:
 	4.	Attachments
 	•	Send PDF attachment; verify appears in Gmail and opens.
 	5.	Spam
-	•	Ensure a message landing in Yahoo “Bulk/Spam” is also imported into Gmail; allow Gmail to auto-classify.
+	•	Ensure a message landing in Yahoo “Bulk/Spam” is also inserted into Gmail; allow Gmail to auto-classify.
 	6.	Exactly-once under restart
 	•	While sending multiple emails to Yahoo, restart the container repeatedly.
 	•	Verify no duplicates in Gmail.
 	7.	Failure + retry
 	•	Block outbound network temporarily.
-	•	Confirm failures logged and retries occur; eventually messages import.
+	•	Confirm failures logged and retries occur; eventually messages insert.
 
 ⸻
 
@@ -325,3 +324,4 @@ Exponential with cap + jitter:
 	•	Token refresh must be robust; store tokens persistently.
 
 ⸻
+

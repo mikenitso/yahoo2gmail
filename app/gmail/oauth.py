@@ -8,7 +8,7 @@ from google_auth_oauthlib.flow import Flow
 from app.store import secrets
 
 SCOPES = [
-    "https://www.googleapis.com/auth/gmail.insert",  # required for users.messages.import
+    "https://www.googleapis.com/auth/gmail.insert",
     "https://www.googleapis.com/auth/gmail.labels",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
