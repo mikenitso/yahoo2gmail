@@ -45,6 +45,17 @@ def _is_retryable_error(exc: Exception) -> bool:
     return True
 
 
+def _http_error_payload(exc: Exception) -> str | None:
+    if not (HttpError and isinstance(exc, HttpError)):
+        return None
+    content = getattr(exc, "content", None)
+    if not content:
+        return None
+    if isinstance(content, bytes):
+        return content.decode("utf-8", errors="replace")
+    return str(content)
+
+
 def _select_due_messages(conn, limit: int = 50):
     return conn.execute(
         """
@@ -246,6 +257,7 @@ def run_retry_loop(
                             "import failed, retry scheduled",
                             correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
                             error=repr(exc),
+                            error_payload=_http_error_payload(exc),
                             next_attempt_at=next_attempt,
                         )
                 else:
@@ -257,6 +269,7 @@ def run_retry_loop(
                             "import failed permanently",
                             correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
                             error=repr(exc),
+                            error_payload=_http_error_payload(exc),
                         )
             finally:
                 if imap_client:
