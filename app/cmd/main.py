@@ -171,6 +171,7 @@ def main() -> int:
         config.deliver_to_inbox,
         system_labels["INBOX"],
         system_labels["UNREAD"],
+        config.gmail_delivery_mode,
         watch_mailboxes,
         logger=logger,
         conn_factory=lambda: connect(config.sqlite_path),

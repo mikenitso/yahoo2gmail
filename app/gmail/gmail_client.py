@@ -34,6 +34,28 @@ def insert_raw_message(
     return result.get("id"), result.get("threadId")
 
 
+def import_raw_message(
+    service,
+    user_id: str,
+    raw_bytes: bytes,
+    label_ids: list[str],
+    internal_date_source: str = "dateHeader",
+):
+    raw_b64 = base64.urlsafe_b64encode(raw_bytes).decode("utf-8")
+    body = {
+        "raw": raw_b64,
+        "labelIds": label_ids,
+        "internalDateSource": internal_date_source,
+    }
+    result = (
+        service.users()
+        .messages()
+        .import_(userId=user_id, body=body)
+        .execute()
+    )
+    return result.get("id"), result.get("threadId")
+
+
 def find_thread_id_by_rfc822msgid(service, user_id: str, msgid: str) -> str | None:
     if not msgid:
         return None

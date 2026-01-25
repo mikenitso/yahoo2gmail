@@ -14,6 +14,7 @@ class AppConfig:
     gmail_oauth_redirect_uri: str
     gmail_label: str
     deliver_to_inbox: bool
+    gmail_delivery_mode: str
     watch_mailboxes: Optional[List[str]]
     sqlite_path: str
     app_master_key: str
@@ -91,6 +92,10 @@ def load_config() -> AppConfig:
     else:
         gmail_label = gmail_label_raw
 
+    gmail_delivery_mode = (_get_env("GMAIL_DELIVERY_MODE", "insert") or "insert").strip().lower()
+    if gmail_delivery_mode not in {"insert", "import"}:
+        raise ConfigError("GMAIL_DELIVERY_MODE must be 'insert' or 'import'")
+
     return AppConfig(
         yahoo_email=yahoo_email,
         yahoo_app_password=yahoo_app_password,
@@ -101,6 +106,7 @@ def load_config() -> AppConfig:
         gmail_oauth_redirect_uri=gmail_oauth_redirect_uri,
         gmail_label=gmail_label,
         deliver_to_inbox=_get_bool("DELIVER_TO_INBOX", True),
+        gmail_delivery_mode=gmail_delivery_mode,
         watch_mailboxes=_parse_mailboxes(_get_env("WATCH_MAILBOXES")),
         sqlite_path=_get_env("SQLITE_PATH", "/data/app.db"),
         app_master_key=app_master_key,
@@ -126,6 +132,7 @@ def config_summary(config: AppConfig) -> dict:
         "gmail_oauth_redirect_uri": config.gmail_oauth_redirect_uri,
         "gmail_label": config.gmail_label if config.gmail_label else "disabled",
         "deliver_to_inbox": config.deliver_to_inbox,
+        "gmail_delivery_mode": config.gmail_delivery_mode,
         "watch_mailboxes": config.watch_mailboxes,
         "sqlite_path": config.sqlite_path,
         "app_master_key": "set" if config.app_master_key else "not_set",

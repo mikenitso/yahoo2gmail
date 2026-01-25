@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.imap.yahoo_client import YahooIMAPClient
 from app.store.lease import acquire_insert_lease, mark_failed_perm, mark_failed_retry, mark_inserted, recover_stuck_insertions
 from app.gmail.gmail_client import find_thread_id_by_rfc822msgid
-from app.sync.message_pipeline import extract_in_reply_to, extract_references, insert_message, prepare_raw_message
+from app.sync.message_pipeline import extract_in_reply_to, extract_references, import_message, insert_message, prepare_raw_message
 from app.log.logger import log_event
 
 try:
@@ -120,6 +120,7 @@ def run_retry_loop(
     deliver_to_inbox: bool,
     inbox_label_id: str,
     unread_label_id: str,
+    delivery_mode: str,
     imap_client_factory,
     account_id: int,
     poll_interval: int = 10,
@@ -146,6 +147,7 @@ def run_retry_loop(
             if not acquire_insert_lease(conn, message_id):
                 continue
             imap_client: YahooIMAPClient | None = None
+            use_import = delivery_mode == "import" and row["attempt_count"] == 0
             try:
                 if logger:
                     log_event(
@@ -156,6 +158,7 @@ def run_retry_loop(
                         mailbox=row["mailbox_name"],
                         uid=row["uid"],
                         uidvalidity=row["uidvalidity"],
+                        delivery_mode="import" if use_import else "insert",
                     )
                 imap_client = imap_client_factory()
                 rfc822, flags_meta, _ = _fetch_rfc822(imap_client, row["mailbox_name"], row["uid"])
@@ -166,27 +169,39 @@ def run_retry_loop(
                     row["uid"],
                     row["rfc822_sha256"],
                 )
-                in_reply_to = extract_in_reply_to(rfc822)
-                thread_id = None
-                if in_reply_to:
-                    thread_id = find_thread_id_by_rfc822msgid(gmail_service, gmail_user_id, in_reply_to)
-                if not thread_id:
-                    refs = extract_references(rfc822)
-                    for ref in reversed(refs):
-                        thread_id = find_thread_id_by_rfc822msgid(gmail_service, gmail_user_id, ref)
-                        if thread_id:
-                            break
-                gmail_message_id, gmail_thread_id = insert_message(
-                    gmail_service,
-                    gmail_user_id,
-                    prepared,
-                    label_id,
-                    deliver_to_inbox,
-                    row["imap_flags_json"],
-                    inbox_label_id,
-                    unread_label_id,
-                    thread_id=thread_id,
-                )
+                if use_import:
+                    gmail_message_id, gmail_thread_id = import_message(
+                        gmail_service,
+                        gmail_user_id,
+                        prepared,
+                        label_id,
+                        deliver_to_inbox,
+                        row["imap_flags_json"],
+                        inbox_label_id,
+                        unread_label_id,
+                    )
+                else:
+                    in_reply_to = extract_in_reply_to(rfc822)
+                    thread_id = None
+                    if in_reply_to:
+                        thread_id = find_thread_id_by_rfc822msgid(gmail_service, gmail_user_id, in_reply_to)
+                    if not thread_id:
+                        refs = extract_references(rfc822)
+                        for ref in reversed(refs):
+                            thread_id = find_thread_id_by_rfc822msgid(gmail_service, gmail_user_id, ref)
+                            if thread_id:
+                                break
+                    gmail_message_id, gmail_thread_id = insert_message(
+                        gmail_service,
+                        gmail_user_id,
+                        prepared,
+                        label_id,
+                        deliver_to_inbox,
+                        row["imap_flags_json"],
+                        inbox_label_id,
+                        unread_label_id,
+                        thread_id=thread_id,
+                    )
                 mark_inserted(conn, message_id, gmail_message_id, gmail_thread_id)
                 if logger:
                     log_event(
@@ -196,6 +211,7 @@ def run_retry_loop(
                         correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
                         gmail_message_id=gmail_message_id,
                         gmail_thread_id=gmail_thread_id,
+                        delivery_mode="import" if use_import else "insert",
                     )
                 try:
                     imap_client.delete_uid(row["mailbox_name"], row["uidvalidity"], row["uid"])
@@ -236,7 +252,19 @@ def run_retry_loop(
                             f"Gmail API returned {status}. Re-authorize via admin UI.",
                             logger=logger,
                         )
-                if _is_retryable_error(exc):
+                if use_import:
+                    next_attempt = _next_attempt_at(row["attempt_count"])
+                    mark_failed_retry(conn, message_id, repr(exc), next_attempt)
+                    if logger:
+                        log_event(
+                            logger,
+                            "import_failure",
+                            "import failed, retry scheduled with insert fallback",
+                            correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                            error=repr(exc),
+                            next_attempt_at=next_attempt,
+                        )
+                elif _is_retryable_error(exc):
                     next_attempt = _next_attempt_at(row["attempt_count"])
                     mark_failed_retry(conn, message_id, repr(exc), next_attempt)
                     if logger:

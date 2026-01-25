@@ -103,6 +103,7 @@ Optional / defaults:
 - `YAHOO_IMAP_HOST` (default `imap.mail.yahoo.com`): IMAP hostname.
 - `YAHOO_IMAP_PORT` (default `993`): IMAP TLS port.
 - `GMAIL_LABEL` (default `yahoo`): Gmail label applied to inserted messages. Set empty to disable.
+- `GMAIL_DELIVERY_MODE` (default `insert`): Gmail API method to use (`insert` or `import`). If set to `import`, failures fall back to `insert` on the first retry.
 - `DELIVER_TO_INBOX` (default `true`): Add INBOX label when inserting into Gmail.
 - `LOG_LEVEL` (default `INFO`): Log level (e.g., INFO, DEBUG).
 - `Y2G_DATA_PATH` (optional): Host path to bind‑mount to `/data` in Docker Compose.

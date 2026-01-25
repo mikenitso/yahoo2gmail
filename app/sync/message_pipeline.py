@@ -5,7 +5,7 @@ from email.parser import BytesParser
 from email.policy import default
 from typing import Dict, List, Tuple
 
-from app.gmail.gmail_client import insert_raw_message
+from app.gmail.gmail_client import import_raw_message, insert_raw_message
 
 
 class PipelineError(Exception):
@@ -83,6 +83,23 @@ def prepare_raw_message(
     return add_headers(raw_bytes, headers)
 
 
+def build_label_ids(
+    label_id: str | None,
+    deliver_to_inbox: bool,
+    flags_json: str,
+    inbox_label_id: str,
+    unread_label_id: str,
+) -> List[str]:
+    label_ids: List[str] = []
+    if label_id:
+        label_ids.append(label_id)
+    if deliver_to_inbox:
+        label_ids.append(inbox_label_id)
+    if not _extract_seen_flag(flags_json):
+        label_ids.append(unread_label_id)
+    return label_ids
+
+
 def insert_message(
     service,
     user_id: str,
@@ -94,11 +111,38 @@ def insert_message(
     unread_label_id: str,
     thread_id: str | None = None,
 ) -> Tuple[str, str]:
-    label_ids = []
-    if label_id:
-        label_ids.append(label_id)
-    if deliver_to_inbox:
-        label_ids.append(inbox_label_id)
-    if not _extract_seen_flag(flags_json):
-        label_ids.append(unread_label_id)
+    label_ids = build_label_ids(
+        label_id,
+        deliver_to_inbox,
+        flags_json,
+        inbox_label_id,
+        unread_label_id,
+    )
     return insert_raw_message(service, user_id, raw_bytes, label_ids, thread_id=thread_id)
+
+
+def import_message(
+    service,
+    user_id: str,
+    raw_bytes: bytes,
+    label_id: str | None,
+    deliver_to_inbox: bool,
+    flags_json: str,
+    inbox_label_id: str,
+    unread_label_id: str,
+    internal_date_source: str = "dateHeader",
+) -> Tuple[str, str]:
+    label_ids = build_label_ids(
+        label_id,
+        deliver_to_inbox,
+        flags_json,
+        inbox_label_id,
+        unread_label_id,
+    )
+    return import_raw_message(
+        service,
+        user_id,
+        raw_bytes,
+        label_ids,
+        internal_date_source=internal_date_source,
+    )
