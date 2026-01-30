@@ -83,7 +83,7 @@ def start_watchers(
 def run(
     account_id: int,
     imap_client_factory,
-    gmail_service,
+    service_manager,
     gmail_user_id: str,
     label_id: str | None,
     deliver_to_inbox: bool,
@@ -106,7 +106,7 @@ def run(
     )
     run_retry_loop(
         conn_factory(),
-        gmail_service,
+        service_manager,
         gmail_user_id,
         label_id,
         deliver_to_inbox,

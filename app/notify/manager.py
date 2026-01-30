@@ -11,19 +11,31 @@ class AlertManager:
     def send(self, conn, kind: str, title: str, message: str, logger=None) -> None:
         if not self.enabled:
             return
-        last = alerts.get_last_alert_time(conn, kind)
+        last = alerts.get_last_success_alert_time(conn, kind)
         if last and alerts.within_cooldown(last, self.cooldown_minutes):
             return
+        self._send_now(conn, kind, title, message, logger=logger, apply_cooldown=False)
+
+    def send_test(self, conn, title: str, message: str, logger=None) -> None:
+        if not self.enabled:
+            return
+        self._send_now(conn, "pushover_test", title, message, logger=logger, apply_cooldown=False)
+
+    def _send_now(self, conn, kind: str, title: str, message: str, logger=None, apply_cooldown: bool = False) -> None:
+        if apply_cooldown:
+            last = alerts.get_last_success_alert_time(conn, kind)
+            if last and alerts.within_cooldown(last, self.cooldown_minutes):
+                return
         try:
             pushover.send_pushover(self.api_token, self.user_key, title, message)
-            alerts.log_alert(conn, kind, title, message)
+            alerts.log_alert(conn, kind, title, message, success=True)
             if logger:
                 logger.info(
                     "pushover alert sent",
                     extra={"event": "pushover_alert", "extra_fields": {"kind": kind}},
                 )
         except Exception as exc:
-            alerts.log_alert(conn, kind, title, f"send_failed: {exc}")
+            alerts.log_alert(conn, kind, title, f"send_failed: {exc}", success=False)
             if logger:
                 logger.info(
                     "pushover alert failed",

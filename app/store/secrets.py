@@ -27,3 +27,11 @@ def get_secret(conn, key: str, master_key: bytes) -> Optional[bytes]:
     if not row:
         return None
     return secretbox.decrypt(row[0], master_key)
+
+
+def get_secret_created_at(conn, key: str) -> Optional[str]:
+    row = conn.execute(
+        "SELECT created_at FROM secrets WHERE key = ?",
+        (key,),
+    ).fetchone()
+    return row[0] if row else None

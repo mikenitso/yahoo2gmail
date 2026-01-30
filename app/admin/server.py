@@ -135,6 +135,12 @@ def _render_page(status: dict, logs: list[str], auth_url: Optional[str], message
       </form>
     </div>
     <div class="section">
+      <h2>Notifications</h2>
+      <form method="post" action="/pushover_test">
+        <button type="submit">Send Pushover test</button>
+      </form>
+    </div>
+    <div class="section">
       <h2>Recent logs (last 20)</h2>
       <pre>{html.escape(logs_text)}</pre>
     </div>
@@ -157,6 +163,7 @@ def start_admin_server(
     oauth_client_id: str,
     oauth_client_secret: str,
     oauth_redirect_uri: str,
+    alert_manager=None,
 ) -> None:
     auth_url_cache = {"url": None}
     status_message = {"msg": None}
@@ -233,6 +240,29 @@ def start_admin_server(
                         log_event(logger, "oauth_saved", "gmail oauth tokens saved")
                 except Exception as exc:
                     status_message["msg"] = f"OAuth exchange failed: {exc}"
+                finally:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                self._render()
+                return
+            if self.path == "/pushover_test":
+                if not alert_manager or not getattr(alert_manager, "enabled", False):
+                    status_message["msg"] = "Pushover is not enabled."
+                    self._render()
+                    return
+                conn = conn_factory()
+                try:
+                    alert_manager.send_test(
+                        conn,
+                        "Pushover test",
+                        "Test notification from Yahoo→Gmail forwarder admin UI.",
+                        logger=logger,
+                    )
+                    status_message["msg"] = "Pushover test sent (or attempted)."
+                except Exception as exc:
+                    status_message["msg"] = f"Pushover test failed: {exc}"
                 finally:
                     try:
                         conn.close()

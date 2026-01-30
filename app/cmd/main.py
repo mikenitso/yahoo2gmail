@@ -4,9 +4,9 @@ import time
 
 from app.config.config import ConfigError, config_summary, load_config
 from app.crypto.secretbox import load_master_key
-from app.gmail.gmail_client import build_service
 from app.gmail.labels import ensure_label, get_system_label_ids
-from app.gmail.oauth import OAuthError, build_credentials, exchange_code_for_tokens, get_authorization_url
+from app.gmail.oauth import OAuthError, exchange_code_for_tokens, get_authorization_url
+from app.gmail.service_manager import GmailServiceManager
 from app.imap.mailbox_watcher import discover_mailboxes
 from app.imap.yahoo_client import YahooIMAPClient, load_or_store_app_password
 from app.log.logger import get_logger, log_event
@@ -85,18 +85,20 @@ def main() -> int:
             oauth_client_id=config.gmail_oauth_client_id,
             oauth_client_secret=config.gmail_oauth_client_secret,
             oauth_redirect_uri=config.gmail_oauth_redirect_uri,
+            alert_manager=alert_manager,
         )
 
+    service_manager = GmailServiceManager(
+        master_key,
+        config.gmail_oauth_client_id,
+        config.gmail_oauth_client_secret,
+        config.gmail_oauth_redirect_uri,
+        alert_manager=alert_manager,
+        logger=logger,
+    )
+
     try:
-        creds = build_credentials(
-            conn,
-            master_key,
-            config.gmail_oauth_client_id,
-            config.gmail_oauth_client_secret,
-            config.gmail_oauth_redirect_uri,
-            alert_manager=alert_manager,
-            logger=logger,
-        )
+        service = service_manager.get_service(conn)
     except OAuthError:
         auth_url, _ = get_authorization_url(
             config.gmail_oauth_client_id,
@@ -115,23 +117,14 @@ def main() -> int:
             while True:
                 time.sleep(10)
                 try:
-                    creds = build_credentials(
-                        conn,
-                        master_key,
-                        config.gmail_oauth_client_id,
-                        config.gmail_oauth_client_secret,
-                        config.gmail_oauth_redirect_uri,
-                        alert_manager=alert_manager,
-                        logger=logger,
-                    )
-                    if creds:
+                    service = service_manager.get_service(conn)
+                    if service:
                         log_event(logger, "oauth_ready", "gmail oauth tokens available")
                         break
                 except OAuthError:
                     continue
         return 1
 
-    service = build_service(creds)
     account_id = _ensure_account(conn, config.yahoo_email, "me")
     label_id = None
     if config.gmail_label:
@@ -165,7 +158,7 @@ def main() -> int:
     run(
         account_id,
         imap_client_factory,
-        service,
+        service_manager,
         "me",
         label_id,
         config.deliver_to_inbox,

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from app.imap.yahoo_client import YahooIMAPClient
 from app.store.lease import acquire_insert_lease, mark_failed_perm, mark_failed_retry, mark_inserted, recover_stuck_insertions
 from app.gmail.gmail_client import find_thread_id_by_rfc822msgid
+from app.gmail.oauth import OAuthError
 from app.sync.message_pipeline import extract_in_reply_to, extract_references, import_message, insert_message, prepare_raw_message
 from app.log.logger import log_event
 
@@ -114,7 +115,7 @@ def _mark_yahoo_delete_failed(conn, message_id: int, last_error: str, next_attem
 
 def run_retry_loop(
     conn,
-    gmail_service,
+    service_manager,
     gmail_user_id: str,
     label_id: str | None,
     deliver_to_inbox: bool,
@@ -136,6 +137,18 @@ def run_retry_loop(
             recovered=recovered,
         )
     while True:
+        try:
+            gmail_service = service_manager.get_service(conn)
+        except OAuthError as exc:
+            if logger:
+                log_event(
+                    logger,
+                    "oauth_unavailable",
+                    "gmail oauth unavailable; waiting for new tokens",
+                    error=str(exc),
+                )
+            time.sleep(poll_interval)
+            continue
         rows = _select_due_messages(conn)
         delete_rows = _select_due_deletions(conn)
         if not rows and not delete_rows:

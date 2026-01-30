@@ -5,21 +5,21 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def log_alert(conn, kind: str, title: str, message: str) -> None:
+def log_alert(conn, kind: str, title: str, message: str, success: bool = True) -> None:
     with conn:
         conn.execute(
             """
-            INSERT INTO alerts(kind, title, message, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO alerts(kind, title, message, success, created_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (kind, title, message, _utc_now_iso()),
+            (kind, title, message, 1 if success else 0, _utc_now_iso()),
         )
 
 
 def get_recent_alerts(conn, limit: int = 20):
     return conn.execute(
         """
-        SELECT kind, title, message, created_at
+        SELECT kind, title, message, created_at, success
           FROM alerts
          ORDER BY created_at DESC
          LIMIT ?
@@ -28,11 +28,12 @@ def get_recent_alerts(conn, limit: int = 20):
     ).fetchall()
 
 
-def get_last_alert_time(conn, kind: str):
+def get_last_success_alert_time(conn, kind: str):
     row = conn.execute(
         """
         SELECT created_at FROM alerts
          WHERE kind = ?
+           AND success = 1
          ORDER BY created_at DESC
          LIMIT 1
         """,
