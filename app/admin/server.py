@@ -26,15 +26,35 @@ def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
 def _token_status(conn, master_key: bytes) -> dict:
     tokens = load_tokens(conn, master_key)
     if not tokens:
-        return {"status": "missing", "expiry": None, "refresh_token": False}
+        return {
+            "status": "missing",
+            "expiry": None,
+            "refresh_token": False,
+            "last_refresh": None,
+            "refresh_token_updated_at": None,
+        }
     expiry_raw = tokens.get("expiry")
     expiry = _parse_iso(expiry_raw)
     refresh_token = bool(tokens.get("refresh_token"))
+    last_refresh = tokens.get("last_access_token_refresh_at")
+    refresh_token_updated_at = tokens.get("refresh_token_updated_at")
     if not expiry:
-        return {"status": "unknown", "expiry": expiry_raw, "refresh_token": refresh_token}
+        return {
+            "status": "unknown",
+            "expiry": expiry_raw,
+            "refresh_token": refresh_token,
+            "last_refresh": last_refresh,
+            "refresh_token_updated_at": refresh_token_updated_at,
+        }
     now = datetime.now(timezone.utc)
     status = "expired" if expiry <= now else "valid"
-    return {"status": status, "expiry": expiry_raw, "refresh_token": refresh_token}
+    return {
+        "status": status,
+        "expiry": expiry_raw,
+        "refresh_token": refresh_token,
+        "last_refresh": last_refresh,
+        "refresh_token_updated_at": refresh_token_updated_at,
+    }
 
 
 def _fetch_status(conn, master_key: bytes) -> dict:
@@ -117,6 +137,8 @@ def _render_page(status: dict, logs: list[str], auth_url: Optional[str], message
       <div><span class="label">Token:</span> {html.escape(status["token"]["status"])}</div>
       <div><span class="label">Token expiry:</span> {html.escape(str(status["token"]["expiry"]))}</div>
       <div><span class="label">Refresh token present:</span> {status["token"]["refresh_token"]}</div>
+      <div><span class="label">Last access token refresh:</span> {html.escape(str(status["token"]["last_refresh"]))}</div>
+      <div><span class="label">Refresh token updated:</span> {html.escape(str(status["token"]["refresh_token_updated_at"]))}</div>
       <div><span class="label">Last insert:</span> {html.escape(_row_to_text(status["last_insert"]))}</div>
       <div><span class="label">Last Yahoo delete:</span> {html.escape(_row_to_text(status["last_delete"]))}</div>
       <div><span class="label">Last error:</span> {html.escape(_row_to_text(status["last_error"]))}</div>

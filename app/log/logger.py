@@ -8,8 +8,11 @@ from typing import Any, Dict, Optional
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        now_local = datetime.now().astimezone()
         payload: Dict[str, Any] = {
-            "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            # Local timestamp for operator readability; include UTC for machines.
+            "ts": now_local.replace(microsecond=0).isoformat(),
+            "ts_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "msg": record.getMessage(),
             "logger": record.name,

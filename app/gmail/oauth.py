@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from google.auth.transport.requests import Request
@@ -44,6 +45,10 @@ def save_tokens(conn, master_key: bytes, token_dict: dict) -> None:
     secrets.set_secret(conn, TOKEN_SECRET_KEY, payload, master_key)
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def build_credentials(
     conn,
     master_key: bytes,
@@ -61,6 +66,8 @@ def build_credentials(
     if creds.valid:
         return creds
     if creds.expired and creds.refresh_token:
+        previous_refresh = token_dict.get("refresh_token")
+        previous_refresh_updated_at = token_dict.get("refresh_token_updated_at")
         try:
             creds.refresh(Request())
         except Exception as exc:
@@ -73,15 +80,25 @@ def build_credentials(
                     logger=logger,
                 )
             raise
-        save_tokens(conn, master_key, {
-            "token": creds.token,
-            "refresh_token": creds.refresh_token,
-            "token_uri": creds.token_uri,
-            "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
-            "scopes": creds.scopes,
-            "expiry": creds.expiry.isoformat() if creds.expiry else None,
-        })
+        now_iso = _now_iso()
+        refresh_updated_at = previous_refresh_updated_at
+        if creds.refresh_token and creds.refresh_token != previous_refresh:
+            refresh_updated_at = now_iso
+        save_tokens(
+            conn,
+            master_key,
+            {
+                "token": creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_uri": creds.token_uri,
+                "client_id": creds.client_id,
+                "client_secret": creds.client_secret,
+                "scopes": creds.scopes,
+                "expiry": creds.expiry.isoformat() if creds.expiry else None,
+                "last_access_token_refresh_at": now_iso,
+                "refresh_token_updated_at": refresh_updated_at,
+            },
+        )
         return creds
 
     raise OAuthError("Gmail OAuth token invalid and not refreshable")
@@ -121,6 +138,7 @@ def exchange_code_for_tokens(
     )
     flow.fetch_token(code=code)
     creds = flow.credentials
+    now_iso = _now_iso()
     token_dict = {
         "token": creds.token,
         "refresh_token": creds.refresh_token,
@@ -129,6 +147,8 @@ def exchange_code_for_tokens(
         "client_secret": creds.client_secret,
         "scopes": creds.scopes,
         "expiry": creds.expiry.isoformat() if creds.expiry else None,
+        "last_access_token_refresh_at": now_iso,
+        "refresh_token_updated_at": now_iso if creds.refresh_token else None,
     }
     save_tokens(conn, master_key, token_dict)
     return token_dict
