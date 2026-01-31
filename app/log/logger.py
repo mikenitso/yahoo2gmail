@@ -2,7 +2,7 @@ import json
 import logging
 import sys
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 
@@ -10,9 +10,8 @@ class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         now_local = datetime.now().astimezone()
         payload: Dict[str, Any] = {
-            # Local timestamp for operator readability; include UTC for machines.
+            # Local timestamp for operator readability.
             "ts": now_local.replace(microsecond=0).isoformat(),
-            "ts_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             "level": record.levelname,
             "msg": record.getMessage(),
             "logger": record.name,
