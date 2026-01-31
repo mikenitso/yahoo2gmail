@@ -47,8 +47,10 @@ Definition of done:
    - [x] Startup catch-up scan on watcher start (still no backfill beyond stored last_seen_uid)
    - [x] UIDVALIDITY change detection and reset
    - [x] IMAP resilience improvements (watcher restart loop, longer IDLE, reconnect on IDLE end, tolerate EOF on logout)
+   - [x] Harden Message-ID parsing to tolerate malformed headers without crashing watchers
    - [x] Yahoo hard-delete after successful Gmail insert + catch-up deletes with retry/backoff
    - [x] Admin UI (LAN-only) for status, logs, and OAuth refresh
    - [x] Pushover alerts on OAuth failures + alert history in admin UI
    - [x] README expanded with Gmail API setup, master key generation, env reference, and project rationale
    - [x] Added `gmail_filters.md` documenting Gmail filter rules (manual use)
+   - [x] Added explicit DNS servers in docker-compose to avoid OAuth/Pushover failures when container DNS breaks

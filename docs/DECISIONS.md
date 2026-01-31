@@ -17,3 +17,15 @@
 - IMAP changes reduce frequent disconnect churn and improve reliability under Yahoo server IDLE policies.
 - Deleting Yahoo messages only after successful Gmail insert ensures no data loss and helps clean up backlog.
 - Pushover alerts provide proactive notification when tokens expire or are missing.
+
+## Summary (2026-01-31)
+
+- Hardened Message-ID parsing to avoid crashes on malformed headers.
+- Added explicit DNS servers in docker-compose to mitigate OAuth/Pushover failures when container DNS resolution is unreliable.
+- Prefer Gmail `users.messages.import` for ingestion, with automatic fallback to `users.messages.insert` on failure.
+
+## Rationale
+
+- Some senders emit invalid Message-ID values; treating them leniently avoids crashing watchers.
+- OAuth token refresh and alerting require reliable DNS resolution inside the container.
+- `import` better matches ingestion semantics while fallback to `insert` preserves delivery when import fails.

@@ -320,8 +320,8 @@ Exponential with cap + jitter:
 	•	IMAP IDLE is per-selected mailbox; use one connection per mailbox.
 	•	Yahoo mailbox naming differs by locale; the spam folder name may vary; use capability + LIST scanning for “Bulk/Spam/Junk” substrings.
 	•	Gmail API expects base64url encoding (not standard base64).
+	•	Message-ID headers can be malformed; parsing must be lenient and never crash the watcher. Treat invalid or missing Message-ID as null.
 	•	When adding X-Y2G-* headers, preserve CRLF and ensure header folding rules (RFC 5322) are respected.
 	•	Token refresh must be robust; store tokens persistently.
 
 ⸻
-
