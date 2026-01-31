@@ -2,8 +2,9 @@ import hashlib
 import imaplib
 import json
 import time
+import re
 from email.parser import BytesParser
-from email.policy import default
+from email.policy import compat32
 from typing import List, Optional, Tuple
 
 from app.store.models import MessageState
@@ -42,8 +43,16 @@ def _parse_internaldate(value: Optional[str]) -> Optional[str]:
 
 
 def _get_message_id(rfc822_bytes: bytes) -> Optional[str]:
-    msg = BytesParser(policy=default).parsebytes(rfc822_bytes)
-    return msg.get("Message-ID")
+    # Use a lenient policy to avoid crashes on malformed Message-ID headers.
+    try:
+        msg = BytesParser(policy=compat32).parsebytes(rfc822_bytes)
+        value = msg.get("Message-ID")
+    except Exception:
+        return None
+    if not value:
+        return None
+    match = re.search(r"<[^>]+>", value)
+    return match.group(0) if match else value.strip() or None
 
 
 def _sha256_hex(payload: bytes) -> str:

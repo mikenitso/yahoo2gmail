@@ -2,6 +2,9 @@ services:
   yahoo2gmail-forwarder:
     build: .
     restart: unless-stopped
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     environment:
       - YAHOO_EMAIL=${YAHOO_EMAIL}
       - YAHOO_APP_PASSWORD=${YAHOO_APP_PASSWORD}
