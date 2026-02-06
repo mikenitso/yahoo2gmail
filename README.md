@@ -66,6 +66,7 @@ Key ideas represented:
 - **Exactly-once behavior** comes from checking/storing delivery state in SQLite before/after Gmail delivery.
 - **Raw message preservation** is done by fetching Yahoo RFC822 and inserting into Gmail with original headers.
 - **Operational controls** (OAuth actions, status, logs) are exposed through the optional admin UI.
+```
 
 ## Quick start (v1)
 
