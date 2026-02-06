@@ -17,6 +17,57 @@ What it does **not** yet do:
 
 So this is a solid **one‑way bridge** that gets you most of the benefit of Gmailify for inbound Yahoo mail, while leaving two‑way sync as future work.
 
+## Overall design diagram
+
+The following ASCII diagram shows the high-level architecture and message flow:
+
+```text
++-------------------------------+       Fetch RFC822       +--------------------------+
+| Yahoo IMAP                    | -----------------------> | Watcher and fetch loop   |
+| INBOX / Spam / Bulk           |                          +--------------------------+
++-------------------------------+                                      |
+                                                                       v
+                                                         +-------------------------------+
+                                                         | Seen before? (SQLite state)   |
+                                                         +-------------------------------+
+                                                           | No                    | Yes
+                                                           v                       v
+                                   +----------------------------------+     +-------------------+
+                                   | Transform and normalize          |     | Skip duplicate    |
+                                   | headers and labels               |     +-------------------+
+                                   +----------------------------------+
+                                                   |
+                                                   v
+                                   +----------------------------------+      +-------------------+
+                                   | Gmail delivery                   | ---> | Gmail mailbox     |
+                                   | insert or import API             |      +-------------------+
+                                   +----------------------------------+
+                                                   |
+                                                   v
+                                   +----------------------------------+
+                                   | Mark delivered in SQLite         |
+                                   +----------------------------------+
+
++-----------------------------------------------------------------------------------------------+
+| yahoo2gmail container                                                                         |
+|                                                                                               |
+|  +-------------------+        +--------------------------+        +------------------------+  |
+|  | Admin UI optional | -----> | OAuth token manager      | <----> | SQLite /data/app.db   |  |
+|  +-------------------+        +--------------------------+        +------------------------+  |
+|          |                                                                                     |
+|          +-------------------------------> +-----------------------------+                     |
+|                                           | In-memory recent logs        |                     |
+|                                           +-----------------------------+                     |
+|                                                                                               |
+|  Watcher/fetch loop and Gmail delivery --errors/events--> Pushover alerts (optional)          |
++-----------------------------------------------------------------------------------------------+
+```
+
+Key ideas represented:
+- **Exactly-once behavior** comes from checking/storing delivery state in SQLite before/after Gmail delivery.
+- **Raw message preservation** is done by fetching Yahoo RFC822 and inserting into Gmail with original headers.
+- **Operational controls** (OAuth actions, status, logs) are exposed through the optional admin UI.
+
 ## Quick start (v1)
 
 ### Gmail API setup
