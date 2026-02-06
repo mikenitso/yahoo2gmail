@@ -19,33 +19,48 @@ So this is a solid **one‑way bridge** that gets you most of the benefit of Gma
 
 ## Overall design diagram
 
-The following Mermaid diagram shows the high-level architecture and message flow:
+The following ASCII diagram shows the high-level architecture and message flow:
 
-```mermaid
-flowchart LR
-    Y[(Yahoo IMAP\nINBOX/Spam/Bulk)] -->|Fetch RFC822| W[Watcher + Fetch Loop]
+```text
++-------------------------------+       Fetch RFC822       +--------------------------+
+| Yahoo IMAP                    | -----------------------> | Watcher and fetch loop   |
+| INBOX / Spam / Bulk           |                          +--------------------------+
++-------------------------------+                                      |
+                                                                       v
+                                                         +-------------------------------+
+                                                         | Seen before? (SQLite state)   |
+                                                         +-------------------------------+
+                                                           | No                    | Yes
+                                                           v                       v
+                                   +----------------------------------+     +-------------------+
+                                   | Transform and normalize          |     | Skip duplicate    |
+                                   | headers and labels               |     +-------------------+
+                                   +----------------------------------+
+                                                   |
+                                                   v
+                                   +----------------------------------+      +-------------------+
+                                   | Gmail delivery                   | ---> | Gmail mailbox     |
+                                   | insert or import API             |      +-------------------+
+                                   +----------------------------------+
+                                                   |
+                                                   v
+                                   +----------------------------------+
+                                   | Mark delivered in SQLite         |
+                                   +----------------------------------+
 
-    subgraph App[yahoo2gmail container]
-      W --> D{Seen before?\nSQLite state}
-      D -->|No| T[Transform/normalize\nheaders + labels]
-      D -->|Yes| S[Skip duplicate]
-      T --> G[Gmail delivery\ninsert/import API]
-      G --> M[Mark delivered\nin SQLite]
-
-      O[OAuth token manager] <--> DB[(SQLite /data/app.db)]
-      D <--> DB
-      M <--> DB
-
-      A[Admin UI (optional)] --> O
-      A --> L[In-memory recent logs]
-
-      P[Pushover alerts (optional)]
-    end
-
-    G --> GM[(Gmail mailbox)]
-    W -.errors/events.-> P
-    G -.errors/events.-> P
-```
++-----------------------------------------------------------------------------------------------+
+| yahoo2gmail container                                                                         |
+|                                                                                               |
+|  +-------------------+        +--------------------------+        +------------------------+  |
+|  | Admin UI optional | -----> | OAuth token manager      | <----> | SQLite /data/app.db    |  |
+|  +-------------------+        +--------------------------+        +------------------------+  |
+|          |                                                                                    |
+|          +-------------------------------> +-----------------------------+                    |
+|                                           | In-memory recent logs        |                    |
+|                                           +-----------------------------+                     |
+|                                                                                               |
+|  Watcher/fetch loop and Gmail delivery --errors/events--> Pushover alerts (optional)          |
++-----------------------------------------------------------------------------------------------+
 
 Key ideas represented:
 - **Exactly-once behavior** comes from checking/storing delivery state in SQLite before/after Gmail delivery.
