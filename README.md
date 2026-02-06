@@ -52,16 +52,15 @@ The following ASCII diagram shows the high-level architecture and message flow:
 | yahoo2gmail container                                                                         |
 |                                                                                               |
 |  +-------------------+        +--------------------------+        +------------------------+  |
-|  | Admin UI optional | -----> | OAuth token manager      | <----> | SQLite /data/app.db   |  |
+|  | Admin UI optional | -----> | OAuth token manager      | <----> | SQLite /data/app.db    |  |
 |  +-------------------+        +--------------------------+        +------------------------+  |
-|          |                                                                                     |
-|          +-------------------------------> +-----------------------------+                     |
-|                                           | In-memory recent logs        |                     |
+|          |                                                                                    |
+|          +-------------------------------> +-----------------------------+                    |
+|                                           | In-memory recent logs        |                    |
 |                                           +-----------------------------+                     |
 |                                                                                               |
 |  Watcher/fetch loop and Gmail delivery --errors/events--> Pushover alerts (optional)          |
 +-----------------------------------------------------------------------------------------------+
-```
 
 Key ideas represented:
 - **Exactly-once behavior** comes from checking/storing delivery state in SQLite before/after Gmail delivery.
