@@ -17,6 +17,41 @@ What it does **not** yet do:
 
 So this is a solid **one‑way bridge** that gets you most of the benefit of Gmailify for inbound Yahoo mail, while leaving two‑way sync as future work.
 
+## Overall design diagram
+
+The following Mermaid diagram shows the high-level architecture and message flow:
+
+```mermaid
+flowchart LR
+    Y[(Yahoo IMAP\nINBOX/Spam/Bulk)] -->|Fetch RFC822| W[Watcher + Fetch Loop]
+
+    subgraph App[yahoo2gmail container]
+      W --> D{Seen before?\nSQLite state}
+      D -->|No| T[Transform/normalize\nheaders + labels]
+      D -->|Yes| S[Skip duplicate]
+      T --> G[Gmail delivery\ninsert/import API]
+      G --> M[Mark delivered\nin SQLite]
+
+      O[OAuth token manager] <--> DB[(SQLite /data/app.db)]
+      D <--> DB
+      M <--> DB
+
+      A[Admin UI (optional)] --> O
+      A --> L[In-memory recent logs]
+
+      P[Pushover alerts (optional)]
+    end
+
+    G --> GM[(Gmail mailbox)]
+    W -.errors/events.-> P
+    G -.errors/events.-> P
+```
+
+Key ideas represented:
+- **Exactly-once behavior** comes from checking/storing delivery state in SQLite before/after Gmail delivery.
+- **Raw message preservation** is done by fetching Yahoo RFC822 and inserting into Gmail with original headers.
+- **Operational controls** (OAuth actions, status, logs) are exposed through the optional admin UI.
+
 ## Quick start (v1)
 
 ### Gmail API setup
