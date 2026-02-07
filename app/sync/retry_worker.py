@@ -14,6 +14,11 @@ try:
 except Exception:  # pragma: no cover
     HttpError = None
 
+try:
+    from google.auth.exceptions import RefreshError
+except Exception:  # pragma: no cover
+    RefreshError = None
+
 
 BACKOFF_SCHEDULE_SECONDS = [60, 120, 240, 480, 900, 1800, 3600]
 
@@ -44,6 +49,15 @@ def _is_retryable_error(exc: Exception) -> bool:
         if 400 <= status < 500:
             return False
     return True
+
+
+def _should_alert_oauth_invalid(exc: Exception) -> bool:
+    if HttpError and isinstance(exc, HttpError):
+        status = getattr(exc.resp, "status", None)
+        return status in {401, 403}
+    if RefreshError and isinstance(exc, RefreshError):
+        return "invalid_grant" in str(exc).lower()
+    return "invalid_grant" in repr(exc).lower()
 
 
 def _select_due_messages(conn, limit: int = 50):
@@ -255,16 +269,14 @@ def run_retry_loop(
                             next_attempt_at=next_attempt,
                         )
             except Exception as exc:
-                if HttpError and isinstance(exc, HttpError):
-                    status = getattr(exc.resp, "status", None)
-                    if status in {401, 403} and alert_manager:
-                        alert_manager.send(
-                            conn,
-                            "oauth_invalid",
-                            "Gmail OAuth token invalid",
-                            f"Gmail API returned {status}. Re-authorize via admin UI.",
-                            logger=logger,
-                        )
+                if alert_manager and _should_alert_oauth_invalid(exc):
+                    alert_manager.send(
+                        conn,
+                        "oauth_invalid",
+                        "Gmail OAuth token invalid",
+                        f"OAuth refresh failed: {exc}. Re-authorize via admin UI.",
+                        logger=logger,
+                    )
                 if use_import:
                     next_attempt = _next_attempt_at(row["attempt_count"])
                     mark_failed_retry(conn, message_id, repr(exc), next_attempt)
