@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone
+from json import JSONDecodeError
 from typing import Optional, Tuple
 
 from google.auth.transport.requests import Request
@@ -49,6 +50,27 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _alert_reauth_required(conn, alert_manager, logger, kind: str, detail: str) -> None:
+    if not alert_manager:
+        return
+    alert_manager.send(
+        conn,
+        kind,
+        "Gmail OAuth requires re-authorization",
+        f"{detail}. Refresh OAuth tokens via admin UI.",
+        logger=logger,
+    )
+
+
+def _refresh_error_alert_kind(exc: Exception) -> str:
+    lower = str(exc).lower()
+    if "invalid_grant" in lower:
+        return "oauth_invalid_grant"
+    if "invalid_client" in lower:
+        return "oauth_client_mismatch"
+    return "oauth_invalid"
+
+
 def build_credentials(
     conn,
     master_key: bytes,
@@ -58,11 +80,47 @@ def build_credentials(
     alert_manager=None,
     logger=None,
 ) -> Credentials:
-    token_dict = load_tokens(conn, master_key)
+    try:
+        token_dict = load_tokens(conn, master_key)
+    except (UnicodeDecodeError, JSONDecodeError) as exc:
+        _alert_reauth_required(
+            conn,
+            alert_manager,
+            logger,
+            "oauth_token_corrupt",
+            f"Stored OAuth token payload is unreadable ({exc})",
+        )
+        raise OAuthError("Gmail OAuth tokens are unreadable; re-authorize via admin UI") from exc
+
     if not token_dict:
+        _alert_reauth_required(
+            conn, alert_manager, logger, "oauth_missing", "Gmail OAuth tokens are missing"
+        )
         raise OAuthError("Gmail OAuth tokens not found; run OAuth flow")
 
+    token_client_id = token_dict.get("client_id")
+    if token_client_id and token_client_id != client_id:
+        _alert_reauth_required(
+            conn,
+            alert_manager,
+            logger,
+            "oauth_client_mismatch",
+            "Stored tokens belong to a different OAuth client_id",
+        )
+        raise OAuthError("Stored OAuth tokens are for a different client_id; re-authorize via admin UI")
+
     creds = Credentials.from_authorized_user_info(token_dict, SCOPES)
+    token_scopes = set(token_dict.get("scopes") or [])
+    if token_scopes and not set(SCOPES).issubset(token_scopes):
+        _alert_reauth_required(
+            conn,
+            alert_manager,
+            logger,
+            "oauth_scope_insufficient",
+            "Stored token scopes are missing required Gmail scopes",
+        )
+        raise OAuthError("Stored OAuth token scopes are insufficient; re-authorize via admin UI")
+
     if creds.valid:
         return creds
     if creds.expired and creds.refresh_token:
@@ -71,14 +129,13 @@ def build_credentials(
         try:
             creds.refresh(Request())
         except Exception as exc:
-            if alert_manager:
-                alert_manager.send(
-                    conn,
-                    "oauth_invalid",
-                    "Gmail OAuth refresh failed",
-                    f"Refresh token failed: {exc}. Re-authorize via admin UI.",
-                    logger=logger,
-                )
+            _alert_reauth_required(
+                conn,
+                alert_manager,
+                logger,
+                _refresh_error_alert_kind(exc),
+                f"OAuth refresh failed: {exc}",
+            )
             raise
         now_iso = _now_iso()
         refresh_updated_at = previous_refresh_updated_at

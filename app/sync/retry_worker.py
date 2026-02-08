@@ -60,6 +60,21 @@ def _should_alert_oauth_invalid(exc: Exception) -> bool:
     return "invalid_grant" in repr(exc).lower()
 
 
+def _oauth_alert_payload(exc: Exception) -> tuple[str, str] | None:
+    text = repr(exc).lower()
+    if "invalid_grant" in text:
+        return ("oauth_invalid_grant", "OAuth refresh token is invalid or revoked")
+    if "invalid_client" in text:
+        return ("oauth_client_mismatch", "OAuth client credentials do not match stored tokens")
+    if "access_token_scope_insufficient" in text or "insufficient scope" in text:
+        return ("oauth_scope_insufficient", "OAuth token scopes are insufficient")
+    if HttpError and isinstance(exc, HttpError):
+        status = getattr(exc.resp, "status", None)
+        if status in {401, 403}:
+            return ("oauth_invalid", f"Gmail API authorization failed ({status})")
+    return None
+
+
 def _select_due_messages(conn, limit: int = 50):
     return conn.execute(
         """
@@ -269,12 +284,14 @@ def run_retry_loop(
                             next_attempt_at=next_attempt,
                         )
             except Exception as exc:
-                if alert_manager and _should_alert_oauth_invalid(exc):
+                payload = _oauth_alert_payload(exc)
+                if alert_manager and payload:
+                    kind, detail = payload
                     alert_manager.send(
                         conn,
-                        "oauth_invalid",
-                        "Gmail OAuth token invalid",
-                        f"OAuth refresh failed: {exc}. Re-authorize via admin UI.",
+                        kind,
+                        "Gmail OAuth requires re-authorization",
+                        f"{detail}. Re-authorize via admin UI. Error: {exc}",
                         logger=logger,
                     )
                 if use_import:
