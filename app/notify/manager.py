@@ -34,6 +34,13 @@ class AlertManager:
                     "pushover alert sent",
                     extra={"event": "pushover_alert", "extra_fields": {"kind": kind}},
                 )
+        except pushover.PushoverDnsError as exc:
+            alerts.log_alert(conn, kind, title, f"send_failed_dns: {exc}", success=False)
+            if logger:
+                logger.info(
+                    "pushover alert failed dns",
+                    extra={"event": "pushover_alert_failed_dns", "extra_fields": {"kind": kind, "error": str(exc)}},
+                )
         except Exception as exc:
             alerts.log_alert(conn, kind, title, f"send_failed: {exc}", success=False)
             if logger:
