@@ -54,3 +54,7 @@ Definition of done:
    - [x] README expanded with Gmail API setup, master key generation, env reference, and project rationale
    - [x] Added `gmail_filters.md` documenting Gmail filter rules (manual use)
    - [x] Added explicit DNS servers in docker-compose to avoid OAuth/Pushover failures when container DNS breaks
+   - [x] Pushover reliability: force DNS refresh (`getaddrinfo`) before each send attempt
+   - [x] Pushover retries: increase backoff to `2s`, then `5s`
+   - [x] Pushover observability: log DNS failures separately from generic send failures
+   - [x] Added unit tests for per-attempt DNS refresh and DNS error handling

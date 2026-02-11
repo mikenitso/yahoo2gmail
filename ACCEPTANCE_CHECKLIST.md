@@ -28,3 +28,8 @@
 7) Failure + retry
    - Block outbound network temporarily.
    - Confirm failures logged and retries occur; eventually messages insert.
+
+8) Pushover DNS resilience
+   - Simulate DNS resolution failure for `api.pushover.net`.
+   - Verify send attempts retry with `2s` then `5s` backoff.
+   - Verify failure is logged as DNS-specific (`send_failed_dns`) instead of generic send failure.

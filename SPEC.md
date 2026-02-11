@@ -38,6 +38,8 @@ Build a Dockerized service that:
 	•	Uses SQLite for dedupe + state
 	•	Encrypt Yahoo app password (and optionally Gmail tokens) using an env-provided master key
 	•	Logging must be “production-grade” (structured JSON recommended)
+	•	If Pushover alerts are enabled, resolve `api.pushover.net` before each send attempt to avoid stale DNS state in long-uptime containers
+	•	If Pushover alerts are enabled, retry transient failures with backoff (`2s`, then `5s`) and log DNS failures separately from generic send failures
 
 ⸻
 

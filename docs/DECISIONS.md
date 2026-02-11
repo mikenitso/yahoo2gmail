@@ -29,3 +29,15 @@
 - Some senders emit invalid Message-ID values; treating them leniently avoids crashing watchers.
 - OAuth token refresh and alerting require reliable DNS resolution inside the container.
 - `import` better matches ingestion semantics while fallback to `insert` preserves delivery when import fails.
+
+## Summary (2026-02-10)
+
+- Hardened Pushover delivery for long-uptime containers by forcing DNS resolution before each send attempt.
+- Added retry backoff sequence of `2s` then `5s`.
+- Added DNS-specific failure classification/logging (`PushoverDnsError`) to distinguish resolver failures from API/HTTP errors.
+
+## Rationale
+
+- Some long-running Docker environments can hit transient or stale DNS resolver states.
+- Explicit pre-send resolution and longer retry spacing improve alert delivery during resolver instability.
+- DNS-specific logging reduces time-to-diagnosis for notification outages.

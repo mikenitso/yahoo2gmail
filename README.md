@@ -17,6 +17,13 @@ What it does **not** yet do:
 
 So this is a solid **one‑way bridge** that gets you most of the benefit of Gmailify for inbound Yahoo mail, while leaving two‑way sync as future work.
 
+## Reliability update: Pushover DNS refresh (2026-02-10)
+
+Pushover notification delivery was hardened for long-running containers:
+- Force DNS resolution of `api.pushover.net` before each send attempt.
+- Retry with increased backoff (`2s`, then `5s`) to tolerate transient resolver recovery.
+- Classify DNS failures separately from other send errors for clearer diagnostics.
+
 ## Overall design diagram
 
 The following ASCII diagram shows the high-level architecture and message flow:
