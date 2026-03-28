@@ -56,7 +56,7 @@ def import_raw_message(
     return result.get("id"), result.get("threadId")
 
 
-def find_thread_id_by_rfc822msgid(service, user_id: str, msgid: str) -> str | None:
+def find_message_by_rfc822msgid(service, user_id: str, msgid: str) -> tuple[str, str] | None:
     if not msgid:
         return None
     try:
@@ -69,10 +69,21 @@ def find_thread_id_by_rfc822msgid(service, user_id: str, msgid: str) -> str | No
         if not msg_id:
             return None
         msg = service.users().messages().get(userId=user_id, id=msg_id, format="metadata").execute()
-        return msg.get("threadId")
+        thread_id = msg.get("threadId")
+        if not thread_id:
+            return None
+        return msg_id, thread_id
     except Exception as exc:
         if HttpError and isinstance(exc, HttpError):
             status = getattr(exc.resp, "status", None)
             if status == 403:
                 return None
         raise
+
+
+def find_thread_id_by_rfc822msgid(service, user_id: str, msgid: str) -> str | None:
+    match = find_message_by_rfc822msgid(service, user_id, msgid)
+    if not match:
+        return None
+    _, thread_id = match
+    return thread_id

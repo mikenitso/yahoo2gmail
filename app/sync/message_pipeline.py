@@ -100,6 +100,10 @@ def build_label_ids(
     return label_ids
 
 
+def build_sent_label_ids(sent_label_id: str) -> List[str]:
+    return [sent_label_id]
+
+
 def insert_message(
     service,
     user_id: str,
