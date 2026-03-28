@@ -14,8 +14,9 @@ from app.store.db import utc_now_iso
 from .yahoo_client import YahooIMAPClient, YahooIMAPError
 
 
-EXCLUDE_MAILBOX_SUBSTRINGS = ["sent", "draft", "trash", "deleted", "archive"]
+EXCLUDE_MAILBOX_SUBSTRINGS = ["draft", "trash", "deleted", "archive"]
 INCLUDE_MAILBOX_SUBSTRINGS = ["bulk", "junk", "spam"]
+SENT_MAILBOX_SUBSTRINGS = ["sent"]
 
 
 def discover_mailboxes(all_mailboxes: List[str]) -> List[str]:
@@ -24,6 +25,10 @@ def discover_mailboxes(all_mailboxes: List[str]) -> List[str]:
         lower = name.lower()
         if lower == "inbox":
             selected.append(name)
+            continue
+        if any(sub in lower for sub in SENT_MAILBOX_SUBSTRINGS):
+            if not any(sub in lower for sub in EXCLUDE_MAILBOX_SUBSTRINGS):
+                selected.append(name)
             continue
         if any(sub in lower for sub in INCLUDE_MAILBOX_SUBSTRINGS):
             if not any(sub in lower for sub in EXCLUDE_MAILBOX_SUBSTRINGS):

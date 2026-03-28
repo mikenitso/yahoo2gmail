@@ -1,6 +1,6 @@
 import sqlite3
 
-from app.store.lease import acquire_insert_lease, mark_failed_retry
+from app.store.lease import acquire_insert_lease, mark_failed_retry, mark_suppressed_duplicate
 from app.store.models import MessageState
 
 
@@ -34,3 +34,13 @@ def test_mark_failed_retry_increments_attempts():
     row = conn.execute("SELECT attempt_count, last_error FROM messages WHERE id=1").fetchone()
     assert row[0] == 1
     assert row[1] == "err"
+
+
+def test_mark_suppressed_duplicate_sets_terminal_state():
+    conn = _setup_db()
+    conn.execute("INSERT INTO messages(id, state) VALUES (1, ?)", (MessageState.INSERTING,))
+
+    mark_suppressed_duplicate(conn, 1)
+
+    row = conn.execute("SELECT state FROM messages WHERE id=1").fetchone()
+    assert row[0] == MessageState.SUPPRESSED_DUPLICATE

@@ -53,6 +53,24 @@ def mark_inserted(conn, message_id: int, gmail_message_id: str, gmail_thread_id:
         )
 
 
+def mark_suppressed_duplicate(conn, message_id: int) -> None:
+    now_iso = _utc_now()
+    with conn:
+        conn.execute(
+            """
+            UPDATE messages
+               SET state = ?,
+                   updated_at = ?
+             WHERE id = ?
+            """,
+            (
+                MessageState.SUPPRESSED_DUPLICATE,
+                now_iso,
+                message_id,
+            ),
+        )
+
+
 def mark_failed_retry(
     conn,
     message_id: int,
