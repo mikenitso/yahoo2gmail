@@ -107,8 +107,8 @@ Recommended defaults:
 
 Mailbox selection:
 	•	WATCH_MAILBOXES optional comma-separated list; if unset:
-	•	auto-discover and include: INBOX + spam/bulk/junk equivalents
-	•	exclude: Sent/Drafts/Trash/Archive by default (future-proofing two-way)
+	•	auto-discover and include: INBOX + spam/bulk/junk equivalents + Sent
+	•	exclude: Drafts/Trash/Archive by default
 
 ⸻
 
@@ -175,8 +175,9 @@ If auto-discovery:
 	•	Include:
 	•	mailbox name equals INBOX (case-insensitive)
 	•	mailbox name contains one of: Bulk, Junk, Spam (case-insensitive)
+	•	mailbox name contains Sent (case-insensitive)
 	•	Exclude (unless explicitly configured):
-	•	Sent, Drafts, Trash, Deleted, Archive
+	•	Drafts, Trash, Deleted, Archive
 Store discovered mailbox + UIDVALIDITY in mailboxes.
 
 ⸻
@@ -334,17 +335,18 @@ Exponential with cap + jitter:
 	•	Mirror messages sent directly from Yahoo clients (Yahoo web, Apple Mail, iPhone Mail, etc.) into Gmail Sent.
 	•	Do not create duplicates for messages already sent from Gmail using the Yahoo SMTP alias.
 	•	If the mirrored message is a reply, it must appear in the existing Gmail conversation thread as well as in Gmail Sent.
+	•	After a Yahoo Sent message is processed, delete it from Yahoo Sent.
 
 13.2 Scope
 	•	Watch Yahoo Sent as an additional mailbox source.
-	•	Treat Yahoo Sent as read-only for this feature.
-	•	Do not delete mirrored sent messages from Yahoo Sent.
+	•	Use the same Yahoo UID based discovery, leasing, retry, and crash recovery model as inbound mail.
 	•	Do not apply the custom Yahoo label to mirrored sent messages.
+	•	Do not apply INBOX or UNREAD to mirrored sent messages.
 
 13.3 Detection and dedupe
 	•	For each new Yahoo Sent message, parse Message-ID, In-Reply-To, and References.
 	•	Primary duplicate check is exact Gmail search by RFC822 Message-ID.
-	•	If Gmail already contains a message with the same Message-ID, suppress mirroring.
+	•	If Gmail already contains a message with the same Message-ID, suppress mirroring and delete the Yahoo Sent copy only.
 	•	This suppression is intended to catch messages composed in Gmail using the Yahoo SMTP alias, because Yahoo Sent preserves the same Message-ID.
 	•	Do not suppress on heuristics alone.
 	•	If Message-ID is missing or malformed, skip suppression and continue with mirroring.
@@ -360,13 +362,12 @@ Exponential with cap + jitter:
 13.5 Thread resolution
 	•	Resolve Gmail threadId by searching Gmail for In-Reply-To first.
 	•	If not found, search References from newest to oldest until a Gmail match is found.
-	•	Thread attachment must rely on exact RFC822 Message-ID matching, using the same search mechanism already used for inbound threading.
+	•	Thread attachment must rely on exact RFC822 Message-ID matching.
 
 13.6 Storage and state
 	•	Continue to use (account_id, mailbox_name, uidvalidity, uid) as the Yahoo-side exactly-once identity.
-	•	Track outbound-sent mirroring separately from inbound forwarding semantics.
-	•	Record whether a Yahoo Sent message was mirrored or suppressed as a duplicate.
-	•	Reuse the existing lease, retry, and crash-recovery model where applicable.
+	•	Add a terminal state for duplicate-suppressed Sent rows so Yahoo deletion retries can still run after suppressing the Gmail insert.
+	•	Reuse the existing Yahoo deletion retry bookkeeping for both inserted and suppressed Sent rows.
 
 13.7 Failure handling
 	•	If Gmail duplicate search fails transiently, retry rather than inserting blindly.
@@ -375,9 +376,9 @@ Exponential with cap + jitter:
 	•	Log whether each Yahoo Sent message was mirrored, suppressed as duplicate, or failed.
 
 13.8 Acceptance tests
-	1.	Send from Gmail web using the Yahoo alias and verify Yahoo Sent contains the same Message-ID but the service suppresses duplicate mirroring.
-	2.	Send directly from Yahoo web or Apple Mail and verify the message appears in Gmail Sent exactly once.
+	1.	Send from Gmail web using the Yahoo alias and verify Yahoo Sent contains the same Message-ID but the service suppresses mirroring and deletes the Yahoo Sent copy.
+	2.	Send directly from Yahoo web or Apple Mail and verify the message appears in Gmail Sent exactly once and the Yahoo Sent copy is deleted.
 	3.	Reply directly from Yahoo web or Apple Mail to a message already present in Gmail and verify the mirrored sent message appears in the same Gmail conversation thread.
-	4.	Restart the container during Yahoo Sent mirroring and verify no duplicate sent messages are created in Gmail.
+	4.	Restart the container during Yahoo Sent processing and verify no duplicate sent messages are created in Gmail.
 
 ⸻

@@ -3,10 +3,10 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from app.imap.yahoo_client import YahooIMAPClient
-from app.store.lease import acquire_insert_lease, mark_failed_perm, mark_failed_retry, mark_inserted, recover_stuck_insertions
-from app.gmail.gmail_client import find_thread_id_by_rfc822msgid
+from app.store.lease import acquire_insert_lease, mark_failed_perm, mark_failed_retry, mark_inserted, mark_suppressed_duplicate, recover_stuck_insertions
+from app.gmail.gmail_client import find_message_by_rfc822msgid, find_thread_id_by_rfc822msgid
 from app.gmail.oauth import OAuthError
-from app.sync.message_pipeline import extract_in_reply_to, extract_references, import_message, insert_message, prepare_raw_message
+from app.sync.message_pipeline import extract_in_reply_to, extract_references, import_message, insert_message, insert_sent_message, prepare_raw_message
 from app.log.logger import log_event
 
 try:
@@ -94,13 +94,31 @@ def _fetch_rfc822(client: YahooIMAPClient, mailbox: str, uid: int):
     return rfc822, flags_list, internal_value
 
 
+def _is_sent_mailbox(mailbox_name: str) -> bool:
+    return "sent" in mailbox_name.lower()
+
+
+def _resolve_thread_id(gmail_service, gmail_user_id: str, rfc822: bytes) -> str | None:
+    in_reply_to = extract_in_reply_to(rfc822)
+    if in_reply_to:
+        match = find_message_by_rfc822msgid(gmail_service, gmail_user_id, in_reply_to)
+        if match:
+            _, thread_id = match
+            return thread_id
+    refs = extract_references(rfc822)
+    for ref in reversed(refs):
+        match = find_message_by_rfc822msgid(gmail_service, gmail_user_id, ref)
+        if match:
+            _, thread_id = match
+            return thread_id
+    return None
+
+
 def _select_due_deletions(conn, limit: int = 50):
     return conn.execute(
         """
         SELECT * FROM messages
-         WHERE state = 'INSERTED'
-           AND gmail_message_id IS NOT NULL
-           AND gmail_thread_id IS NOT NULL
+         WHERE state IN ('INSERTED', 'SUPPRESSED_DUPLICATE')
            AND yahoo_deleted_at IS NULL
            AND (yahoo_delete_next_attempt_at IS NULL OR yahoo_delete_next_attempt_at <= ?)
          ORDER BY (yahoo_delete_next_attempt_at IS NULL) DESC, yahoo_delete_next_attempt_at ASC, updated_at ASC
@@ -142,6 +160,125 @@ def _mark_yahoo_delete_failed(conn, message_id: int, last_error: str, next_attem
         )
 
 
+def _delete_yahoo_message(conn, row, imap_client: YahooIMAPClient, logger=None) -> None:
+    message_id = row["id"]
+    try:
+        imap_client.delete_uid(row["mailbox_name"], row["uidvalidity"], row["uid"])
+        _mark_yahoo_deleted(conn, message_id)
+        if logger:
+            log_event(
+                logger,
+                "yahoo_delete_success",
+                "deleted yahoo message",
+                correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                mailbox=row["mailbox_name"],
+                uid=row["uid"],
+                uidvalidity=row["uidvalidity"],
+            )
+    except Exception as exc:
+        next_attempt = _next_attempt_at(row["yahoo_delete_attempt_count"])
+        _mark_yahoo_delete_failed(conn, message_id, repr(exc), next_attempt)
+        if logger:
+            log_event(
+                logger,
+                "yahoo_delete_failure",
+                "failed to delete yahoo message; retry scheduled",
+                correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                mailbox=row["mailbox_name"],
+                uid=row["uid"],
+                uidvalidity=row["uidvalidity"],
+                error=repr(exc),
+                next_attempt_at=next_attempt,
+            )
+
+
+def _process_message(
+    conn,
+    row,
+    gmail_service,
+    gmail_user_id: str,
+    label_id: str | None,
+    deliver_to_inbox: bool,
+    inbox_label_id: str,
+    unread_label_id: str,
+    sent_label_id: str,
+    delivery_mode: str,
+    imap_client: YahooIMAPClient,
+    logger=None,
+):
+    use_import = delivery_mode == "import" and row["attempt_count"] == 0 and not _is_sent_mailbox(row["mailbox_name"])
+    if logger:
+        log_event(
+            logger,
+            "insert_attempt",
+            "insert lease acquired",
+            correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+            mailbox=row["mailbox_name"],
+            uid=row["uid"],
+            uidvalidity=row["uidvalidity"],
+            delivery_mode="import" if use_import else "insert",
+        )
+    rfc822, flags_meta, _ = _fetch_rfc822(imap_client, row["mailbox_name"], row["uid"])
+    prepared = prepare_raw_message(
+        rfc822,
+        row["mailbox_name"],
+        row["uidvalidity"],
+        row["uid"],
+        row["rfc822_sha256"],
+    )
+
+    if _is_sent_mailbox(row["mailbox_name"]):
+        duplicate = find_message_by_rfc822msgid(gmail_service, gmail_user_id, row["message_id"])
+        if duplicate:
+            mark_suppressed_duplicate(conn, row["id"])
+            _delete_yahoo_message(conn, row, imap_client, logger=logger)
+            return
+        thread_id = _resolve_thread_id(gmail_service, gmail_user_id, rfc822)
+        gmail_message_id, gmail_thread_id = insert_sent_message(
+            gmail_service,
+            gmail_user_id,
+            prepared,
+            sent_label_id,
+            thread_id=thread_id,
+        )
+    elif use_import:
+        gmail_message_id, gmail_thread_id = import_message(
+            gmail_service,
+            gmail_user_id,
+            prepared,
+            label_id,
+            deliver_to_inbox,
+            row["imap_flags_json"],
+            inbox_label_id,
+            unread_label_id,
+        )
+    else:
+        thread_id = _resolve_thread_id(gmail_service, gmail_user_id, rfc822)
+        gmail_message_id, gmail_thread_id = insert_message(
+            gmail_service,
+            gmail_user_id,
+            prepared,
+            label_id,
+            deliver_to_inbox,
+            row["imap_flags_json"],
+            inbox_label_id,
+            unread_label_id,
+            thread_id=thread_id,
+        )
+    mark_inserted(conn, row["id"], gmail_message_id, gmail_thread_id)
+    if logger:
+        log_event(
+            logger,
+            "insert_success",
+            "inserted into gmail",
+            correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+            gmail_message_id=gmail_message_id,
+            gmail_thread_id=gmail_thread_id,
+            delivery_mode="import" if use_import else "insert",
+        )
+    _delete_yahoo_message(conn, row, imap_client, logger=logger)
+
+
 def run_retry_loop(
     conn,
     service_manager,
@@ -150,6 +287,7 @@ def run_retry_loop(
     deliver_to_inbox: bool,
     inbox_label_id: str,
     unread_label_id: str,
+    sent_label_id: str,
     delivery_mode: str,
     imap_client_factory,
     account_id: int,
@@ -189,100 +327,22 @@ def run_retry_loop(
             if not acquire_insert_lease(conn, message_id):
                 continue
             imap_client: YahooIMAPClient | None = None
-            use_import = delivery_mode == "import" and row["attempt_count"] == 0
             try:
-                if logger:
-                    log_event(
-                        logger,
-                        "insert_attempt",
-                        "insert lease acquired",
-                        correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
-                        mailbox=row["mailbox_name"],
-                        uid=row["uid"],
-                        uidvalidity=row["uidvalidity"],
-                        delivery_mode="import" if use_import else "insert",
-                    )
                 imap_client = imap_client_factory()
-                rfc822, flags_meta, _ = _fetch_rfc822(imap_client, row["mailbox_name"], row["uid"])
-                prepared = prepare_raw_message(
-                    rfc822,
-                    row["mailbox_name"],
-                    row["uidvalidity"],
-                    row["uid"],
-                    row["rfc822_sha256"],
+                _process_message(
+                    conn,
+                    row,
+                    gmail_service=gmail_service,
+                    gmail_user_id=gmail_user_id,
+                    label_id=label_id,
+                    deliver_to_inbox=deliver_to_inbox,
+                    inbox_label_id=inbox_label_id,
+                    unread_label_id=unread_label_id,
+                    sent_label_id=sent_label_id,
+                    delivery_mode=delivery_mode,
+                    imap_client=imap_client,
+                    logger=logger,
                 )
-                if use_import:
-                    gmail_message_id, gmail_thread_id = import_message(
-                        gmail_service,
-                        gmail_user_id,
-                        prepared,
-                        label_id,
-                        deliver_to_inbox,
-                        row["imap_flags_json"],
-                        inbox_label_id,
-                        unread_label_id,
-                    )
-                else:
-                    in_reply_to = extract_in_reply_to(rfc822)
-                    thread_id = None
-                    if in_reply_to:
-                        thread_id = find_thread_id_by_rfc822msgid(gmail_service, gmail_user_id, in_reply_to)
-                    if not thread_id:
-                        refs = extract_references(rfc822)
-                        for ref in reversed(refs):
-                            thread_id = find_thread_id_by_rfc822msgid(gmail_service, gmail_user_id, ref)
-                            if thread_id:
-                                break
-                    gmail_message_id, gmail_thread_id = insert_message(
-                        gmail_service,
-                        gmail_user_id,
-                        prepared,
-                        label_id,
-                        deliver_to_inbox,
-                        row["imap_flags_json"],
-                        inbox_label_id,
-                        unread_label_id,
-                        thread_id=thread_id,
-                    )
-                mark_inserted(conn, message_id, gmail_message_id, gmail_thread_id)
-                if logger:
-                    log_event(
-                        logger,
-                        "insert_success",
-                        "inserted into gmail",
-                        correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
-                        gmail_message_id=gmail_message_id,
-                        gmail_thread_id=gmail_thread_id,
-                        delivery_mode="import" if use_import else "insert",
-                    )
-                try:
-                    imap_client.delete_uid(row["mailbox_name"], row["uidvalidity"], row["uid"])
-                    _mark_yahoo_deleted(conn, message_id)
-                    if logger:
-                        log_event(
-                            logger,
-                            "yahoo_delete_success",
-                            "deleted yahoo message",
-                            correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
-                            mailbox=row["mailbox_name"],
-                            uid=row["uid"],
-                            uidvalidity=row["uidvalidity"],
-                        )
-                except Exception as exc:
-                    next_attempt = _next_attempt_at(row["yahoo_delete_attempt_count"])
-                    _mark_yahoo_delete_failed(conn, message_id, repr(exc), next_attempt)
-                    if logger:
-                        log_event(
-                            logger,
-                            "yahoo_delete_failure",
-                            "failed to delete yahoo message; retry scheduled",
-                            correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
-                            mailbox=row["mailbox_name"],
-                            uid=row["uid"],
-                            uidvalidity=row["uidvalidity"],
-                            error=repr(exc),
-                            next_attempt_at=next_attempt,
-                        )
             except Exception as exc:
                 payload = _oauth_alert_payload(exc)
                 if alert_manager and payload:
@@ -294,6 +354,7 @@ def run_retry_loop(
                         f"{detail}. Re-authorize via admin UI. Error: {exc}",
                         logger=logger,
                     )
+                use_import = delivery_mode == "import" and row["attempt_count"] == 0 and not _is_sent_mailbox(row["mailbox_name"])
                 if use_import:
                     next_attempt = _next_attempt_at(row["attempt_count"])
                     mark_failed_retry(conn, message_id, repr(exc), next_attempt)
@@ -349,33 +410,7 @@ def run_retry_loop(
                         uid=row["uid"],
                         uidvalidity=row["uidvalidity"],
                     )
-                imap_client.delete_uid(row["mailbox_name"], row["uidvalidity"], row["uid"])
-                _mark_yahoo_deleted(conn, message_id)
-                if logger:
-                    log_event(
-                        logger,
-                        "yahoo_delete_success",
-                        "deleted yahoo message",
-                        correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
-                        mailbox=row["mailbox_name"],
-                        uid=row["uid"],
-                        uidvalidity=row["uidvalidity"],
-                    )
-            except Exception as exc:
-                next_attempt = _next_attempt_at(row["yahoo_delete_attempt_count"])
-                _mark_yahoo_delete_failed(conn, message_id, repr(exc), next_attempt)
-                if logger:
-                    log_event(
-                        logger,
-                        "yahoo_delete_failure",
-                        "failed to delete yahoo message; retry scheduled",
-                        correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
-                        mailbox=row["mailbox_name"],
-                        uid=row["uid"],
-                        uidvalidity=row["uidvalidity"],
-                        error=repr(exc),
-                        next_attempt_at=next_attempt,
-                    )
+                _delete_yahoo_message(conn, row, imap_client, logger=logger)
             finally:
                 try:
                     imap_client.close()

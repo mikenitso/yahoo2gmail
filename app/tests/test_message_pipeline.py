@@ -1,6 +1,6 @@
 import hashlib
 
-from app.sync.message_pipeline import add_headers, build_label_ids, prepare_raw_message
+from app.sync.message_pipeline import add_headers, build_label_ids, build_sent_label_ids, prepare_raw_message
 
 
 def _sha256_hex(payload: bytes) -> str:
@@ -47,3 +47,9 @@ def test_build_label_ids_unseen():
         "UNREAD_ID",
     )
     assert labels == ["UNREAD_ID"]
+
+
+def test_build_sent_label_ids_uses_sent_only():
+    labels = build_sent_label_ids("SENT_ID")
+
+    assert labels == ["SENT_ID"]

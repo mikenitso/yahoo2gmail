@@ -33,3 +33,17 @@
    - Simulate DNS resolution failure for `api.pushover.net`.
    - Verify send attempts retry with `2s` then `5s` backoff.
    - Verify failure is logged as DNS-specific (`send_failed_dns`) instead of generic send failure.
+
+9) Gmail alias send suppression
+   - Send from Gmail using the `mikenitso@yahoo.com` alias.
+   - Verify the message appears in Yahoo Sent.
+   - Verify the service deletes the Yahoo Sent copy without creating a duplicate in Gmail Sent.
+
+10) Yahoo-originated Sent mirroring
+   - Send directly from Yahoo web, Apple Mail, or iOS Mail.
+   - Verify the message appears in Gmail Sent exactly once.
+   - Verify the Yahoo Sent copy is deleted after processing.
+
+11) Sent reply threading
+   - Reply from Yahoo web, Apple Mail, or iOS Mail to a conversation that already exists in Gmail.
+   - Verify the mirrored sent message appears in the existing Gmail conversation thread even though it only has the `SENT` label.

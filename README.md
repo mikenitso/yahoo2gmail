@@ -10,6 +10,7 @@ This project replaces the **forwarding** portion of Gmailify:
 - It pulls mail from Yahoo (including spam/bulk) and inserts it into Gmail with original headers intact.
 - It preserves threading by keeping Message‑ID / In‑Reply‑To / References.
 - It avoids duplicates across restarts using SQLite state.
+- It mirrors Yahoo Sent mail into Gmail Sent, suppressing duplicates for messages already sent from Gmail via the Yahoo alias.
 
 What it does **not** yet do:
 - Two‑way sync (Gmail → Yahoo changes like read state, deletes, labels).
@@ -31,7 +32,7 @@ The following ASCII diagram shows the high-level architecture and message flow:
 ```text
 +-------------------------------+       Fetch RFC822       +--------------------------+
 | Yahoo IMAP                    | -----------------------> | Watcher and fetch loop   |
-| INBOX / Spam / Bulk           |                          +--------------------------+
+| INBOX / Spam / Bulk / Sent    |                          +--------------------------+
 +-------------------------------+                                      |
                                                                        v
                                                          +-------------------------------+
@@ -163,6 +164,7 @@ Optional / defaults:
 - `GMAIL_LABEL` (default `yahoo`): Gmail label applied to inserted messages. Set empty to disable.
 - `GMAIL_DELIVERY_MODE` (default `insert`): Gmail API method to use (`insert` or `import`). If set to `import`, failures fall back to `insert` on the first retry.
 - `DELIVER_TO_INBOX` (default `true`): Add INBOX label when inserting into Gmail.
+- `WATCH_MAILBOXES` (default auto-discovery): Comma-separated Yahoo mailboxes to watch. Auto-discovery includes `INBOX`, spam/bulk/junk equivalents, and `Sent`.
 - `LOG_LEVEL` (default `INFO`): Log level (e.g., INFO, DEBUG).
 - `Y2G_DATA_PATH` (optional): Host path to bind‑mount to `/data` in Docker Compose.
 - `ADMIN_ENABLED` (default `false`): Enable the admin UI.
@@ -176,5 +178,7 @@ Optional / defaults:
 ## Notes
 
 - No backfill: only messages arriving after startup are forwarded.
+- Yahoo `Sent` is mirrored with strict `Message-ID` dedupe. If Gmail already has the same `Message-ID`, the service deletes the Yahoo Sent copy without inserting a duplicate.
+- Sent messages inserted from Yahoo-originated clients use Gmail's `SENT` label only. They can still join an existing Gmail conversation thread without being labeled `INBOX`.
 - No UI; logs only.
 - See `SPEC.md` and `TASKS.md` for requirements and progress.

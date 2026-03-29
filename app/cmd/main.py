@@ -129,7 +129,7 @@ def main() -> int:
     label_id = None
     if config.gmail_label:
         label_id = ensure_label(service, conn, account_id, config.gmail_label)
-    system_labels = get_system_label_ids(service, ["INBOX", "UNREAD"])
+    system_labels = get_system_label_ids(service, ["INBOX", "UNREAD", "SENT"])
 
     app_password = load_or_store_app_password(conn, master_key, config.yahoo_app_password)
 
@@ -164,6 +164,7 @@ def main() -> int:
         config.deliver_to_inbox,
         system_labels["INBOX"],
         system_labels["UNREAD"],
+        system_labels["SENT"],
         config.gmail_delivery_mode,
         watch_mailboxes,
         logger=logger,

@@ -100,6 +100,10 @@ def build_label_ids(
     return label_ids
 
 
+def build_sent_label_ids(sent_label_id: str) -> List[str]:
+    return [sent_label_id]
+
+
 def insert_message(
     service,
     user_id: str,
@@ -119,6 +123,22 @@ def insert_message(
         unread_label_id,
     )
     return insert_raw_message(service, user_id, raw_bytes, label_ids, thread_id=thread_id)
+
+
+def insert_sent_message(
+    service,
+    user_id: str,
+    raw_bytes: bytes,
+    sent_label_id: str,
+    thread_id: str | None = None,
+) -> Tuple[str, str]:
+    return insert_raw_message(
+        service,
+        user_id,
+        raw_bytes,
+        build_sent_label_ids(sent_label_id),
+        thread_id=thread_id,
+    )
 
 
 def import_message(
