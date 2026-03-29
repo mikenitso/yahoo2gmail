@@ -327,3 +327,57 @@ Exponential with cap + jitter:
 	•	Token refresh must be robust; store tokens persistently.
 
 ⸻
+
+13) vNext: Yahoo Sent → Gmail Sent mirroring
+
+13.1 Goal
+	•	Mirror messages sent directly from Yahoo clients (Yahoo web, Apple Mail, iPhone Mail, etc.) into Gmail Sent.
+	•	Do not create duplicates for messages already sent from Gmail using the Yahoo SMTP alias.
+	•	If the mirrored message is a reply, it must appear in the existing Gmail conversation thread as well as in Gmail Sent.
+
+13.2 Scope
+	•	Watch Yahoo Sent as an additional mailbox source.
+	•	Treat Yahoo Sent as read-only for this feature.
+	•	Do not delete mirrored sent messages from Yahoo Sent.
+	•	Do not apply the custom Yahoo label to mirrored sent messages.
+
+13.3 Detection and dedupe
+	•	For each new Yahoo Sent message, parse Message-ID, In-Reply-To, and References.
+	•	Primary duplicate check is exact Gmail search by RFC822 Message-ID.
+	•	If Gmail already contains a message with the same Message-ID, suppress mirroring.
+	•	This suppression is intended to catch messages composed in Gmail using the Yahoo SMTP alias, because Yahoo Sent preserves the same Message-ID.
+	•	Do not suppress on heuristics alone.
+	•	If Message-ID is missing or malformed, skip suppression and continue with mirroring.
+
+13.4 Gmail insertion behavior
+	•	Insert mirrored Yahoo Sent messages into Gmail with the SENT system label only.
+	•	Do not apply INBOX.
+	•	Do not apply the custom Yahoo label.
+	•	Do not apply UNREAD; mirrored sent messages should appear as read.
+	•	If a Gmail thread can be resolved from In-Reply-To or References, insert using that threadId.
+	•	If no Gmail thread can be resolved, insert as a standalone sent message.
+
+13.5 Thread resolution
+	•	Resolve Gmail threadId by searching Gmail for In-Reply-To first.
+	•	If not found, search References from newest to oldest until a Gmail match is found.
+	•	Thread attachment must rely on exact RFC822 Message-ID matching, using the same search mechanism already used for inbound threading.
+
+13.6 Storage and state
+	•	Continue to use (account_id, mailbox_name, uidvalidity, uid) as the Yahoo-side exactly-once identity.
+	•	Track outbound-sent mirroring separately from inbound forwarding semantics.
+	•	Record whether a Yahoo Sent message was mirrored or suppressed as a duplicate.
+	•	Reuse the existing lease, retry, and crash-recovery model where applicable.
+
+13.7 Failure handling
+	•	If Gmail duplicate search fails transiently, retry rather than inserting blindly.
+	•	If Gmail insert fails transiently, retry with the existing backoff model.
+	•	If Gmail returns a permanent failure, mark the message as permanently failed and log it.
+	•	Log whether each Yahoo Sent message was mirrored, suppressed as duplicate, or failed.
+
+13.8 Acceptance tests
+	1.	Send from Gmail web using the Yahoo alias and verify Yahoo Sent contains the same Message-ID but the service suppresses duplicate mirroring.
+	2.	Send directly from Yahoo web or Apple Mail and verify the message appears in Gmail Sent exactly once.
+	3.	Reply directly from Yahoo web or Apple Mail to a message already present in Gmail and verify the mirrored sent message appears in the same Gmail conversation thread.
+	4.	Restart the container during Yahoo Sent mirroring and verify no duplicate sent messages are created in Gmail.
+
+⸻
