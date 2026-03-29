@@ -1,184 +1,197 @@
 # yahoo2gmail-forwarder
 
-Yahoo → Gmail Forwarder (v1). A self‑hosted bridge that watches Yahoo IMAP, fetches raw RFC822, and inserts messages into Gmail via the Gmail API with exactly‑once semantics.
+Self-hosted Yahoo Mail to Gmail sync for people who want Gmailify-like behavior without relying on Yahoo forwarding.
+
+It watches Yahoo over IMAP, fetches raw RFC822 messages, and inserts them into Gmail through the Gmail API while preserving headers, threading, HTML, inline images, and attachments. It also mirrors Yahoo `Sent` mail into Gmail `Sent`, while suppressing duplicates for messages already sent from Gmail using the Yahoo alias.
+
+## What it does
+
+- Syncs new Yahoo mail from `INBOX`, spam/bulk/junk folders, and `Sent`
+- Preserves MIME fidelity by inserting raw RFC822 into Gmail
+- Preserves Gmail threading using `Message-ID`, `In-Reply-To`, and `References`
+- Uses SQLite state and retry logic to avoid duplicate inserts across restarts
+- Deletes processed Yahoo messages after successful handling
+- Exposes an optional local admin UI for OAuth setup and runtime status
+- Supports optional Pushover alerts with DNS-refresh and retry hardening
+
+## What it does not do
+
+- Backfill old Yahoo mail before first startup
+- Two-way sync from Gmail back to Yahoo
+- Label, read-state, or delete reconciliation between systems
+- Full bidirectional mailbox mirroring
 
 ## Why this exists
 
-Yahoo does not provide reliable, free forwarding for all accounts and folders (especially spam/bulk). Gmailify used to solve this by syncing Yahoo into Gmail, but it is no longer available for many Yahoo accounts and doesn’t offer a self‑hosted path.
+Yahoo forwarding is inconsistent, especially for spam/bulk folders. Gmailify used to cover much of this use case, but it is no longer broadly available and it was never a self-hosted option. This project is a pragmatic one-way bridge: get Yahoo mail into Gmail reliably, preserve the original message, and keep failure handling simple enough to run on a home server.
 
-This project replaces the **forwarding** portion of Gmailify:
-- It pulls mail from Yahoo (including spam/bulk) and inserts it into Gmail with original headers intact.
-- It preserves threading by keeping Message‑ID / In‑Reply‑To / References.
-- It avoids duplicates across restarts using SQLite state.
-- It mirrors Yahoo Sent mail into Gmail Sent, suppressing duplicates for messages already sent from Gmail via the Yahoo alias.
-
-What it does **not** yet do:
-- Two‑way sync (Gmail → Yahoo changes like read state, deletes, labels).
-- Full bidirectional reconciliation.
-
-So this is a solid **one‑way bridge** that gets you most of the benefit of Gmailify for inbound Yahoo mail, while leaving two‑way sync as future work.
-
-## Reliability update: Pushover DNS refresh (2026-02-10)
-
-Pushover notification delivery was hardened for long-running containers:
-- Force DNS resolution of `api.pushover.net` before each send attempt.
-- Retry with increased backoff (`2s`, then `5s`) to tolerate transient resolver recovery.
-- Classify DNS failures separately from other send errors for clearer diagnostics.
-
-## Overall design diagram
-
-The following ASCII diagram shows the high-level architecture and message flow:
+## How it works
 
 ```text
-+-------------------------------+       Fetch RFC822       +--------------------------+
-| Yahoo IMAP                    | -----------------------> | Watcher and fetch loop   |
-| INBOX / Spam / Bulk / Sent    |                          +--------------------------+
-+-------------------------------+                                      |
-                                                                       v
-                                                         +-------------------------------+
-                                                         | Seen before? (SQLite state)   |
-                                                         +-------------------------------+
-                                                           | No                    | Yes
-                                                           v                       v
-                                   +----------------------------------+     +-------------------+
-                                   | Transform and normalize          |     | Skip duplicate    |
-                                   | headers and labels               |     +-------------------+
-                                   +----------------------------------+
-                                                   |
-                                                   v
-                                   +----------------------------------+      +-------------------+
-                                   | Gmail delivery                   | ---> | Gmail mailbox     |
-                                   | insert or import API             |      +-------------------+
-                                   +----------------------------------+
-                                                   |
-                                                   v
-                                   +----------------------------------+
-                                   | Mark delivered in SQLite         |
-                                   +----------------------------------+
+Yahoo IMAP (INBOX / Spam / Bulk / Sent)
+  -> watcher detects new UID
+  -> raw RFC822 fetched from Yahoo
+  -> SQLite state + lease decides whether work is new / retryable
+  -> Gmail API insert/import runs
+  -> Yahoo message is deleted after success
 
-+-----------------------------------------------------------------------------------------------+
-| yahoo2gmail container                                                                         |
-|                                                                                               |
-|  +-------------------+        +--------------------------+        +------------------------+  |
-|  | Admin UI optional | -----> | OAuth token manager      | <----> | SQLite /data/app.db    |  |
-|  +-------------------+        +--------------------------+        +------------------------+  |
-|          |                                                                                    |
-|          +-------------------------------> +-----------------------------+                    |
-|                                           | In-memory recent logs        |                    |
-|                                           +-----------------------------+                     |
-|                                                                                               |
-|  Watcher/fetch loop and Gmail delivery --errors/events--> Pushover alerts (optional)          |
-+-----------------------------------------------------------------------------------------------+
-
-Key ideas represented:
-- **Exactly-once behavior** comes from checking/storing delivery state in SQLite before/after Gmail delivery.
-- **Raw message preservation** is done by fetching Yahoo RFC822 and inserting into Gmail with original headers.
-- **Operational controls** (OAuth actions, status, logs) are exposed through the optional admin UI.
+Sent folder special case:
+  -> strict Message-ID lookup in Gmail
+  -> already exists in Gmail: delete Yahoo Sent copy only
+  -> not found in Gmail: insert into Gmail SENT, attach to thread if possible, then delete from Yahoo Sent
 ```
 
-## Quick start (v1)
+## Architecture
 
-### Gmail API setup
+- Runtime: single container, long-running process
+- Yahoo side: IMAP over TLS with IDLE per watched mailbox
+- Gmail side: Gmail API OAuth, `insert` or `import` delivery
+- State: SQLite for exactly-once semantics, retries, leases, and secret storage
+- Secrets: encrypted at rest with `APP_MASTER_KEY`
+- Admin UI: optional LAN-only UI for OAuth and status
 
-1) Create a Google Cloud project (or use an existing one).
+## Quick start
 
-2) Enable the Gmail API for that project.
+### 1. Create Google OAuth credentials
 
-3) Create an OAuth client (Desktop app or Web app):
-   - You will get a client ID and client secret (from the JSON client secrets).
-   - Set the redirect URI to match `GMAIL_OAUTH_REDIRECT_URI` (default example: `http://localhost`).
-   - Note the project ID (sometimes called "application ID" in the console) for your records.
+1. Create or select a Google Cloud project.
+2. Enable the Gmail API.
+3. Create an OAuth client.
+4. Set `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`, and `GMAIL_OAUTH_REDIRECT_URI`.
 
-4) Copy the OAuth values into `.env`:
-   - `GMAIL_OAUTH_CLIENT_ID`
-   - `GMAIL_OAUTH_CLIENT_SECRET`
-   - `GMAIL_OAUTH_REDIRECT_URI`
-
-### Generate the master key
-
-The app encrypts stored secrets (Yahoo app password and OAuth tokens) using a 32-byte master key.
-
-Generate one (base64):
+### 2. Generate an app master key
 
 ```bash
 openssl rand -base64 32
 ```
 
-Set it in `.env` as `APP_MASTER_KEY`.
+Set the output as `APP_MASTER_KEY`.
 
-### Admin UI (optional)
+### 3. Configure environment
 
-Set `ADMIN_ENABLED=true` to start a small LAN-only admin UI inside the container.
-By default it binds to `0.0.0.0:8787`.
-
-The UI provides:
-- Status (last insert, last Yahoo delete, token validity, last errors)
-- Recent logs (last 20 lines, from an in-memory buffer)
-- OAuth flow: generate auth URL and exchange a full redirect URL
-
-If you expose it beyond your LAN, add a reverse proxy with authentication.
-
-1) Copy env template:
+Copy your env file and fill in the required values:
 
 ```bash
 cp .env.example .env
 ```
 
-2) Fill in required environment variables in `.env`.
+Minimum required variables:
 
-3) Complete Gmail OAuth (one-time):
+- `YAHOO_EMAIL`
+- `YAHOO_APP_PASSWORD`
+- `APP_MASTER_KEY`
+- `GMAIL_OAUTH_CLIENT_ID`
+- `GMAIL_OAUTH_CLIENT_SECRET`
+- `GMAIL_OAUTH_REDIRECT_URI`
+
+### 4. Complete Gmail OAuth
 
 ```bash
 python -m app.cmd.main oauth <AUTH_CODE>
 ```
 
-The command will log an authorization URL if you don’t already have one. Visit it, approve access, and paste the returned code.
-OAuth tokens are stored (encrypted) in the SQLite database.
+If tokens are missing, the app logs an authorization URL you can open in a browser.
 
-4) Run with Docker:
+### 5. Start the service
 
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
-Data (SQLite + OAuth tokens) is stored in `/data` inside the container and should be mounted to a host volume.
+Persist `/data` to keep SQLite state and encrypted OAuth tokens.
 
-## .env reference
+## Docker / Portainer notes
 
-All configuration is driven by environment variables in `.env` (see `.env.example`).
+The included `docker-compose.yml` is suitable for a long-running home-server deployment:
 
-Required:
+- container restart policy is `unless-stopped`
+- persistent data is stored under `/data`
+- admin UI is exposed on port `8787`
+- runtime env vars are passed through directly from `.env`
 
-- `YAHOO_EMAIL`: Your Yahoo email address used for IMAP login.
-- `YAHOO_APP_PASSWORD`: Yahoo app password (stored encrypted after first run).
-- `APP_MASTER_KEY`: 32‑byte base64 master key for encrypting stored secrets.
-- `GMAIL_OAUTH_CLIENT_ID`: OAuth client ID from Google Cloud.
-- `GMAIL_OAUTH_CLIENT_SECRET`: OAuth client secret from Google Cloud.
-- `GMAIL_OAUTH_REDIRECT_URI`: Redirect URI configured on the OAuth client.
+If you deploy with Portainer from GitHub, pushing to `main` is enough for a standard repo-based stack update.
 
-Optional / defaults:
+## Configuration reference
 
-- `SQLITE_PATH` (default `/data/app.db`): SQLite DB path inside the container.
-- `YAHOO_IMAP_HOST` (default `imap.mail.yahoo.com`): IMAP hostname.
-- `YAHOO_IMAP_PORT` (default `993`): IMAP TLS port.
-- `GMAIL_LABEL` (default `yahoo`): Gmail label applied to inserted messages. Set empty to disable.
-- `GMAIL_DELIVERY_MODE` (default `insert`): Gmail API method to use (`insert` or `import`). If set to `import`, failures fall back to `insert` on the first retry.
-- `DELIVER_TO_INBOX` (default `true`): Add INBOX label when inserting into Gmail.
-- `WATCH_MAILBOXES` (default auto-discovery): Comma-separated Yahoo mailboxes to watch. Auto-discovery includes `INBOX`, spam/bulk/junk equivalents, and `Sent`.
-- `LOG_LEVEL` (default `INFO`): Log level (e.g., INFO, DEBUG).
-- `Y2G_DATA_PATH` (optional): Host path to bind‑mount to `/data` in Docker Compose.
-- `ADMIN_ENABLED` (default `false`): Enable the admin UI.
-- `ADMIN_HOST` (default `0.0.0.0`): Bind address for the admin UI.
-- `ADMIN_PORT` (default `8787`): Port for the admin UI.
-- `PUSHOVER_ENABLED` (default `false`): Enable Pushover alerts.
-- `PUSHOVER_API_TOKEN`: Pushover application API token.
-- `PUSHOVER_USER_KEY`: Pushover user key.
-- `PUSHOVER_COOLDOWN_MINUTES` (default `360`): Minimum minutes between repeated alerts.
+### Required
 
-## Notes
+- `YAHOO_EMAIL`: Yahoo account used for IMAP login
+- `YAHOO_APP_PASSWORD`: Yahoo app password; stored encrypted after first run
+- `APP_MASTER_KEY`: 32-byte base64 key used to encrypt stored secrets
+- `GMAIL_OAUTH_CLIENT_ID`: Google OAuth client ID
+- `GMAIL_OAUTH_CLIENT_SECRET`: Google OAuth client secret
+- `GMAIL_OAUTH_REDIRECT_URI`: Redirect URI configured in Google Cloud
 
-- No backfill: only messages arriving after startup are forwarded.
-- Yahoo `Sent` is mirrored with strict `Message-ID` dedupe. If Gmail already has the same `Message-ID`, the service deletes the Yahoo Sent copy without inserting a duplicate.
-- Sent messages inserted from Yahoo-originated clients use Gmail's `SENT` label only. They can still join an existing Gmail conversation thread without being labeled `INBOX`.
-- No UI; logs only.
-- See `SPEC.md` and `TASKS.md` for requirements and progress.
+### Common optional settings
+
+- `SQLITE_PATH` default `/data/app.db`
+- `YAHOO_IMAP_HOST` default `imap.mail.yahoo.com`
+- `YAHOO_IMAP_PORT` default `993`
+- `GMAIL_LABEL` default `yahoo`
+- `GMAIL_DELIVERY_MODE` default `insert`
+- `DELIVER_TO_INBOX` default `true`
+- `WATCH_MAILBOXES` default auto-discovery of `INBOX`, spam/bulk/junk, and `Sent`
+- `LOG_LEVEL` default `INFO`
+- `ADMIN_ENABLED` default `false`
+- `ADMIN_HOST` default `0.0.0.0`
+- `ADMIN_PORT` default `8787`
+
+### Pushover
+
+- `PUSHOVER_ENABLED`
+- `PUSHOVER_API_TOKEN`
+- `PUSHOVER_USER_KEY`
+- `PUSHOVER_COOLDOWN_MINUTES` default `360`
+
+Pushover delivery is hardened for long-uptime containers by forcing a DNS lookup of `api.pushover.net` before each send attempt and retrying transient failures with `2s` then `5s` backoff.
+
+## Sent mirroring behavior
+
+Yahoo `Sent` is treated differently from inbound mail:
+
+- If Gmail already contains the same `Message-ID`, the Yahoo Sent copy is treated as a duplicate and deleted
+- If Gmail does not contain that `Message-ID`, the message is inserted into Gmail with the `SENT` label only
+- If `In-Reply-To` or `References` match an existing Gmail message, the inserted sent message joins that Gmail conversation
+- Sent messages inserted from Yahoo-originated clients do not get the custom Yahoo label and do not receive the `INBOX` label
+
+This makes Gmail alias sends and Yahoo-originated sends coexist cleanly.
+
+## Admin UI
+
+When `ADMIN_ENABLED=true`, the app starts a small LAN-facing admin server that provides:
+
+- Gmail OAuth bootstrap and re-authorization flow
+- current status and recent errors
+- recent in-memory logs
+- a basic Pushover test action
+
+If you expose it beyond your LAN, put it behind authentication.
+
+## Reliability model
+
+- No backfill: only mail arriving after startup is processed
+- Yahoo UID plus SQLite state is the source of truth for exactly-once handling
+- Retry worker handles transient Gmail failures with exponential backoff
+- Stuck leases are recovered on startup
+- Processed Yahoo messages are deleted only after the required Gmail-side action succeeds
+
+## Manual verification
+
+See [ACCEPTANCE_CHECKLIST.md](ACCEPTANCE_CHECKLIST.md) for the current manual acceptance tests, including:
+
+- inbound forwarding
+- Gmail threading
+- spam/bulk handling
+- restart safety
+- Yahoo Sent duplicate suppression
+- Yahoo-originated Sent mirroring
+
+## Repository guide
+
+- [SPEC.md](SPEC.md): current product and behavior spec
+- [TASKS.md](TASKS.md): implementation progress notes
+- [docs/plans/2026-03-28-yahoo-sent-mirroring-plan.md](docs/plans/2026-03-28-yahoo-sent-mirroring-plan.md): planning doc for Sent mirroring
+
+## Status
+
+The project is currently best described as a robust one-way Yahoo to Gmail bridge with Sent mirroring. It is suitable for self-hosted personal use, but it is not yet a general-purpose two-way mail sync engine.
