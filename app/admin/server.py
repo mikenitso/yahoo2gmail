@@ -88,7 +88,8 @@ def _fetch_status(conn, master_key: bytes) -> dict:
         """
         SELECT mailbox_name, uidvalidity, uid, last_error, updated_at
           FROM messages
-         WHERE last_error IS NOT NULL
+         WHERE state IN ('FAILED_RETRY', 'FAILED_PERM')
+           AND last_error IS NOT NULL
          ORDER BY updated_at DESC
          LIMIT 1
         """

@@ -38,6 +38,8 @@ def mark_inserted(conn, message_id: int, gmail_message_id: str, gmail_thread_id:
             """
             UPDATE messages
                SET state = ?,
+                   next_attempt_at = NULL,
+                   last_error = NULL,
                    gmail_message_id = ?,
                    gmail_thread_id = ?,
                    updated_at = ?
@@ -60,6 +62,8 @@ def mark_suppressed_duplicate(conn, message_id: int) -> None:
             """
             UPDATE messages
                SET state = ?,
+                   next_attempt_at = NULL,
+                   last_error = NULL,
                    updated_at = ?
              WHERE id = ?
             """,
