@@ -110,6 +110,7 @@ def mark_failed_perm(conn, message_id: int, last_error: str) -> None:
             """
             UPDATE messages
                SET state = ?,
+                   next_attempt_at = NULL,
                    last_error = ?,
                    updated_at = ?
              WHERE id = ?

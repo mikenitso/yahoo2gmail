@@ -70,6 +70,56 @@ def _should_mark_failed_perm(row, exc: Exception) -> bool:
     return _is_terminal_yahoo_fetch_error(exc) and attempt_count >= MAX_FETCH_RETRIES
 
 
+def _terminal_failure_alert_kind(row) -> str:
+    return f"yahoo_fetch_failed_perm_{row['id']}"
+
+
+def _alert_terminal_fetch_failure(conn, row, alert_manager=None, logger=None) -> None:
+    if not alert_manager:
+        return
+    alert_manager.send(
+        conn,
+        _terminal_failure_alert_kind(row),
+        "Yahoo message permanently failed",
+        (
+            f"Yahoo message in {row['mailbox_name']} uidvalidity={row['uidvalidity']} uid={row['uid']} "
+            f"was marked FAILED_PERM after repeated non-recovering fetch errors."
+        ),
+        logger=logger,
+    )
+
+
+def _select_terminal_failed_retry_rows(conn):
+    return conn.execute(
+        """
+        SELECT * FROM messages
+         WHERE state = 'FAILED_RETRY'
+           AND attempt_count >= ?
+           AND last_error LIKE '%RFC822 body missing%'
+         ORDER BY updated_at ASC
+        """,
+        (MAX_FETCH_RETRIES,),
+    ).fetchall()
+
+
+def _reclassify_terminal_failures(conn, alert_manager=None, logger=None) -> int:
+    rows = _select_terminal_failed_retry_rows(conn)
+    changed = 0
+    for row in rows:
+        mark_failed_perm(conn, row["id"], row["last_error"])
+        _alert_terminal_fetch_failure(conn, row, alert_manager=alert_manager, logger=logger)
+        changed += 1
+        if logger:
+            log_event(
+                logger,
+                "insert_failure_perm",
+                "existing retry row marked failed permanently",
+                correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                error=row["last_error"],
+            )
+    return changed
+
+
 def _oauth_alert_payload(exc: Exception) -> tuple[str, str] | None:
     text = repr(exc).lower()
     if "invalid_grant" in text:
@@ -313,6 +363,14 @@ def run_retry_loop(
             "recovered stuck insertions",
             recovered=recovered,
         )
+    reclassified = _reclassify_terminal_failures(conn, alert_manager=alert_manager, logger=logger)
+    if logger and reclassified:
+        log_event(
+            logger,
+            "failed_retry_reclassified",
+            "reclassified terminal retry rows",
+            reclassified=reclassified,
+        )
     while True:
         try:
             gmail_service = service_manager.get_service(conn)
@@ -380,6 +438,7 @@ def run_retry_loop(
                 elif _is_retryable_error(exc):
                     if _should_mark_failed_perm(row, exc):
                         mark_failed_perm(conn, message_id, repr(exc))
+                        _alert_terminal_fetch_failure(conn, row, alert_manager=alert_manager, logger=logger)
                         if logger:
                             log_event(
                                 logger,
