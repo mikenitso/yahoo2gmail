@@ -44,6 +44,17 @@ def start_watchers(
                                 error=str(exc),
                                 error_type=type(exc).__name__,
                             )
+                    except Exception as exc:
+                        if logger:
+                            log_event(
+                                logger,
+                                "imap_watch_crash",
+                                "imap watcher crashed; restarting",
+                                correlation_id=f"{mbox}|0|0",
+                                mailbox=mbox,
+                                error=str(exc),
+                                error_type=type(exc).__name__,
+                            )
                     finally:
                         if client:
                             try:
@@ -51,18 +62,6 @@ def start_watchers(
                             except Exception:
                                 pass
                     time.sleep(5)
-            except Exception as exc:
-                if logger:
-                    log_event(
-                        logger,
-                        "imap_watch_crash",
-                        "imap watcher crashed",
-                        correlation_id=f"{mbox}|0|0",
-                        mailbox=mbox,
-                        error=str(exc),
-                        error_type=type(exc).__name__,
-                    )
-                raise
             finally:
                 try:
                     if conn:

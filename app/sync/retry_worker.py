@@ -2,7 +2,7 @@ import random
 import time
 from datetime import datetime, timedelta, timezone
 
-from app.imap.yahoo_client import YahooIMAPClient
+from app.imap.yahoo_client import YahooIMAPClient, YahooIMAPError
 from app.store.lease import acquire_insert_lease, mark_failed_perm, mark_failed_retry, mark_inserted, mark_suppressed_duplicate, recover_stuck_insertions
 from app.gmail.gmail_client import find_message_by_rfc822msgid, find_thread_id_by_rfc822msgid
 from app.gmail.oauth import OAuthError
@@ -21,6 +21,7 @@ except Exception:  # pragma: no cover
 
 
 BACKOFF_SCHEDULE_SECONDS = [60, 120, 240, 480, 900, 1800, 3600]
+MAX_FETCH_RETRIES = 5
 
 
 def _utc_now() -> datetime:
@@ -58,6 +59,15 @@ def _should_alert_oauth_invalid(exc: Exception) -> bool:
     if RefreshError and isinstance(exc, RefreshError):
         return "invalid_grant" in str(exc).lower()
     return "invalid_grant" in repr(exc).lower()
+
+
+def _is_terminal_yahoo_fetch_error(exc: Exception) -> bool:
+    return isinstance(exc, YahooIMAPError) and "rfc822 body missing" in str(exc).lower()
+
+
+def _should_mark_failed_perm(row, exc: Exception) -> bool:
+    attempt_count = row["attempt_count"] if hasattr(row, "__getitem__") else row.get("attempt_count", 0)
+    return _is_terminal_yahoo_fetch_error(exc) and attempt_count >= MAX_FETCH_RETRIES
 
 
 def _oauth_alert_payload(exc: Exception) -> tuple[str, str] | None:
@@ -368,17 +378,28 @@ def run_retry_loop(
                             next_attempt_at=next_attempt,
                         )
                 elif _is_retryable_error(exc):
-                    next_attempt = _next_attempt_at(row["attempt_count"])
-                    mark_failed_retry(conn, message_id, repr(exc), next_attempt)
-                    if logger:
-                        log_event(
-                            logger,
-                            "insert_failure",
-                            "insert failed, retry scheduled",
-                            correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
-                            error=repr(exc),
-                            next_attempt_at=next_attempt,
-                        )
+                    if _should_mark_failed_perm(row, exc):
+                        mark_failed_perm(conn, message_id, repr(exc))
+                        if logger:
+                            log_event(
+                                logger,
+                                "insert_failure_perm",
+                                "insert failed permanently",
+                                correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                                error=repr(exc),
+                            )
+                    else:
+                        next_attempt = _next_attempt_at(row["attempt_count"])
+                        mark_failed_retry(conn, message_id, repr(exc), next_attempt)
+                        if logger:
+                            log_event(
+                                logger,
+                                "insert_failure",
+                                "insert failed, retry scheduled",
+                                correlation_id=f"{row['mailbox_name']}|{row['uidvalidity']}|{row['uid']}",
+                                error=repr(exc),
+                                next_attempt_at=next_attempt,
+                            )
                 else:
                     mark_failed_perm(conn, message_id, repr(exc))
                     if logger:

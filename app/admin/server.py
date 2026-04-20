@@ -59,6 +59,13 @@ def _token_status(conn, master_key: bytes) -> dict:
 
 def _fetch_status(conn, master_key: bytes) -> dict:
     token = _token_status(conn, master_key)
+    mailboxes = conn.execute(
+        """
+        SELECT name, uidvalidity, last_seen_uid, last_poll_at, last_success_at, last_error, last_error_at, updated_at
+          FROM mailboxes
+         ORDER BY name ASC
+        """
+    ).fetchall()
     last_insert = conn.execute(
         """
         SELECT mailbox_name, uidvalidity, uid, gmail_message_id, updated_at
@@ -102,6 +109,7 @@ def _fetch_status(conn, master_key: bytes) -> dict:
         "last_delete": last_delete,
         "last_error": last_error,
         "last_delete_error": last_delete_error,
+        "mailboxes": mailboxes,
         "alerts": recent_alerts,
     }
 
@@ -115,6 +123,7 @@ def _row_to_text(row) -> str:
 def _render_page(status: dict, logs: list[str], auth_url: Optional[str], message: Optional[str]) -> bytes:
     logs_text = "\n".join(logs)
     alerts_text = "\n".join(" | ".join(str(v) for v in row) for row in status["alerts"])
+    mailbox_text = "\n".join(" | ".join(str(v) for v in row) for row in status["mailboxes"])
     html_body = f"""<!doctype html>
 <html>
   <head>
@@ -143,6 +152,10 @@ def _render_page(status: dict, logs: list[str], auth_url: Optional[str], message
       <div><span class="label">Last Yahoo delete:</span> {html.escape(_row_to_text(status["last_delete"]))}</div>
       <div><span class="label">Last error:</span> {html.escape(_row_to_text(status["last_error"]))}</div>
       <div><span class="label">Last Yahoo delete error:</span> {html.escape(_row_to_text(status["last_delete_error"]))}</div>
+    </div>
+    <div class="section">
+      <h2>Mailbox health</h2>
+      <pre>{html.escape(mailbox_text)}</pre>
     </div>
     <div class="section">
       <h2>OAuth</h2>

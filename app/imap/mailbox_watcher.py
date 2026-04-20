@@ -69,14 +69,66 @@ def _get_or_create_mailbox(conn, account_id: int, name: str, uidvalidity: int, l
     with conn:
         conn.execute(
             """
-            INSERT INTO mailboxes(account_id, name, uidvalidity, last_seen_uid, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO mailboxes(
+              account_id, name, uidvalidity, last_seen_uid,
+              last_poll_at, last_success_at, last_error, last_error_at,
+              created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(account_id, name) DO UPDATE SET
               uidvalidity=excluded.uidvalidity,
               last_seen_uid=excluded.last_seen_uid,
+              last_poll_at=excluded.last_poll_at,
+              last_success_at=excluded.last_success_at,
+              last_error=excluded.last_error,
+              last_error_at=excluded.last_error_at,
               updated_at=excluded.updated_at
             """,
-            (account_id, name, uidvalidity, last_seen_uid, now, now),
+            (account_id, name, uidvalidity, last_seen_uid, now, now, None, None, now, now),
+        )
+
+
+def _mark_mailbox_poll(conn, account_id: int, name: str) -> None:
+    now = utc_now_iso()
+    with conn:
+        conn.execute(
+            """
+            UPDATE mailboxes
+               SET last_poll_at = ?, updated_at = ?
+             WHERE account_id = ? AND name = ?
+            """,
+            (now, now, account_id, name),
+        )
+
+
+def _mark_mailbox_success(conn, account_id: int, name: str) -> None:
+    now = utc_now_iso()
+    with conn:
+        conn.execute(
+            """
+            UPDATE mailboxes
+               SET last_success_at = ?,
+                   last_error = NULL,
+                   last_error_at = NULL,
+                   updated_at = ?
+             WHERE account_id = ? AND name = ?
+            """,
+            (now, now, account_id, name),
+        )
+
+
+def _mark_mailbox_error(conn, account_id: int, name: str, error: str) -> None:
+    now = utc_now_iso()
+    with conn:
+        conn.execute(
+            """
+            UPDATE mailboxes
+               SET last_error = ?,
+                   last_error_at = ?,
+                   updated_at = ?
+             WHERE account_id = ? AND name = ?
+            """,
+            (error, now, now, account_id, name),
         )
 
 
@@ -167,6 +219,8 @@ def initialize_mailbox_state(
     uids = client.search_uids(1)
     last_seen = max(uids) if uids else 0
     _get_or_create_mailbox(conn, account_id, mailbox, uidvalidity, last_seen)
+    _mark_mailbox_poll(conn, account_id, mailbox)
+    _mark_mailbox_success(conn, account_id, mailbox)
     return uidvalidity, last_seen
 
 
@@ -179,12 +233,14 @@ def process_new_messages(
     last_seen_uid: int,
     logger=None,
 ) -> int:
+    _mark_mailbox_poll(conn, account_id, mailbox)
     try:
         client.noop()
     except Exception:
         pass
     uids = client.search_uids(last_seen_uid + 1)
     if not uids:
+        _mark_mailbox_success(conn, account_id, mailbox)
         return last_seen_uid
     max_seen = last_seen_uid
     for uid in uids:
@@ -198,8 +254,40 @@ def process_new_messages(
                 uid=uid,
                 uidvalidity=uidvalidity,
             )
-        rfc822, flags_list, internal_value = client.fetch_rfc822(uid)
-        _store_message(conn, account_id, mailbox, uidvalidity, uid, rfc822, flags_list, internal_value)
+        try:
+            rfc822, flags_list, internal_value = client.fetch_rfc822(uid)
+        except Exception as exc:
+            _mark_mailbox_error(conn, account_id, mailbox, repr(exc))
+            if logger:
+                log_event(
+                    logger,
+                    "message_fetch_failure",
+                    "message fetch failed",
+                    correlation_id=f"{mailbox}|{uidvalidity}|{uid}",
+                    mailbox=mailbox,
+                    uid=uid,
+                    uidvalidity=uidvalidity,
+                    error=repr(exc),
+                    error_type=type(exc).__name__,
+                )
+            continue
+        try:
+            _store_message(conn, account_id, mailbox, uidvalidity, uid, rfc822, flags_list, internal_value)
+        except Exception as exc:
+            _mark_mailbox_error(conn, account_id, mailbox, repr(exc))
+            if logger:
+                log_event(
+                    logger,
+                    "message_store_failure",
+                    "message store failed",
+                    correlation_id=f"{mailbox}|{uidvalidity}|{uid}",
+                    mailbox=mailbox,
+                    uid=uid,
+                    uidvalidity=uidvalidity,
+                    error=repr(exc),
+                    error_type=type(exc).__name__,
+                )
+            continue
         if logger:
             log_event(
                 logger,
@@ -214,6 +302,7 @@ def process_new_messages(
         if uid > max_seen:
             max_seen = uid
     _update_last_seen(conn, account_id, mailbox, max_seen)
+    _mark_mailbox_success(conn, account_id, mailbox)
     return max_seen
 
 

@@ -162,6 +162,7 @@ When `ADMIN_ENABLED=true`, the app starts a small LAN-facing admin server that p
 
 - Gmail OAuth bootstrap and re-authorization flow
 - current status and recent errors
+- per-mailbox watcher heartbeat data, including last success and last error
 - recent in-memory logs
 - a basic Pushover test action
 
