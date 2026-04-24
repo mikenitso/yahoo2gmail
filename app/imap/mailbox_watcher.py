@@ -169,6 +169,24 @@ def _get_mailbox_state(conn, account_id: int, name: str) -> Optional[Tuple[int, 
     return int(row[0]), int(row[1])
 
 
+def _message_exists(conn, account_id: int, mailbox_name: str, uidvalidity: int, uid: int) -> bool:
+    row = conn.execute(
+        """
+        SELECT 1 FROM messages
+         WHERE account_id = ?
+           AND mailbox_name = ?
+           AND uidvalidity = ?
+           AND uid = ?
+        """,
+        (account_id, mailbox_name, uidvalidity, uid),
+    ).fetchone()
+    return row is not None
+
+
+def _replay_start_uid(last_seen_uid: int, replay_window_uids: int) -> int:
+    return max(1, last_seen_uid - replay_window_uids)
+
+
 def _store_message(
     conn,
     account_id: int,
@@ -232,6 +250,7 @@ def process_new_messages(
     mailbox: str,
     uidvalidity: int,
     last_seen_uid: int,
+    replay_window_uids: int = 0,
     logger=None,
 ) -> int:
     _mark_mailbox_poll(conn, account_id, mailbox)
@@ -239,12 +258,16 @@ def process_new_messages(
         client.noop()
     except Exception:
         pass
-    uids = client.search_uids(last_seen_uid + 1)
+    uids = client.search_uids(_replay_start_uid(last_seen_uid, replay_window_uids))
     if not uids:
         _mark_mailbox_success(conn, account_id, mailbox)
         return last_seen_uid
     max_seen = last_seen_uid
     for uid in uids:
+        if uid > max_seen:
+            max_seen = uid
+        if _message_exists(conn, account_id, mailbox, uidvalidity, uid):
+            continue
         if logger:
             log_event(
                 logger,
@@ -300,8 +323,6 @@ def process_new_messages(
                 uidvalidity=uidvalidity,
                 size=len(rfc822),
             )
-        if uid > max_seen:
-            max_seen = uid
     _update_last_seen(conn, account_id, mailbox, max_seen)
     _mark_mailbox_success(conn, account_id, mailbox)
     return max_seen
@@ -312,6 +333,7 @@ def watch_mailbox(
     conn,
     account_id: int,
     mailbox: str,
+    replay_window_uids: int = 0,
     idle_timeout: int = 900,
     poll_interval: int = 30,
     logger=None,
@@ -352,6 +374,7 @@ def watch_mailbox(
         mailbox,
         uidvalidity,
         last_seen,
+        replay_window_uids=replay_window_uids,
         logger=logger,
     )
 
@@ -441,6 +464,7 @@ def watch_mailbox(
                         mailbox,
                         uidvalidity,
                         last_seen,
+                        replay_window_uids=replay_window_uids,
                         logger=logger,
                     )
                 else:
@@ -452,6 +476,7 @@ def watch_mailbox(
                         mailbox,
                         uidvalidity,
                         last_seen,
+                        replay_window_uids=replay_window_uids,
                         logger=logger,
                     )
             else:
@@ -463,6 +488,7 @@ def watch_mailbox(
                     mailbox,
                     uidvalidity,
                     last_seen,
+                    replay_window_uids=replay_window_uids,
                     logger=logger,
                 )
         except (OSError, imaplib.IMAP4.abort, imaplib.IMAP4.error) as exc:

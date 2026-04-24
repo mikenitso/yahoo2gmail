@@ -12,6 +12,7 @@ def start_watchers(
     account_id: int,
     imap_client_factory,
     mailboxes: List[str],
+    replay_window_uids: int = 0,
     logger=None,
     conn_factory=None,
 ):
@@ -24,7 +25,14 @@ def start_watchers(
                     client = None
                     try:
                         client = imap_client_factory()
-                        watch_mailbox(client, conn, account_id, mbox, logger=logger)
+                        watch_mailbox(
+                            client,
+                            conn,
+                            account_id,
+                            mbox,
+                            replay_window_uids=replay_window_uids,
+                            logger=logger,
+                        )
                         if logger:
                             log_event(
                                 logger,
@@ -91,6 +99,7 @@ def run(
     sent_label_id: str,
     delivery_mode: str,
     watch_mailboxes: List[str],
+    replay_window_uids: int = 0,
     logger=None,
     conn_factory=None,
     alert_manager=None,
@@ -101,6 +110,7 @@ def run(
         account_id,
         imap_client_factory,
         watch_mailboxes,
+        replay_window_uids=replay_window_uids,
         logger=logger,
         conn_factory=conn_factory,
     )

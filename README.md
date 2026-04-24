@@ -127,6 +127,7 @@ If you deploy with Portainer from GitHub, pushing to `main` is enough for a stan
 - `SQLITE_PATH` default `/data/app.db`
 - `YAHOO_IMAP_HOST` default `imap.mail.yahoo.com`
 - `YAHOO_IMAP_PORT` default `993`
+- `YAHOO_REPLAY_WINDOW_UIDS` default `500`
 - `GMAIL_LABEL` default `yahoo`
 - `GMAIL_DELIVERY_MODE` default `insert`
 - `DELIVER_TO_INBOX` default `true`
@@ -173,6 +174,7 @@ If you expose it beyond your LAN, put it behind authentication.
 - No backfill: only mail arriving after startup is processed
 - Yahoo UID plus SQLite state is the source of truth for exactly-once handling
 - Retry worker handles transient Gmail failures with exponential backoff
+- Yahoo mailbox watchers reconcile the most recent `500` UIDs behind the cursor to recover messages missed during transient watcher/store failures
 - Stuck leases are recovered on startup
 - Processed Yahoo messages are deleted only after the required Gmail-side action succeeds
 

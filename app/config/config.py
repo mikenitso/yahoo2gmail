@@ -9,6 +9,7 @@ class AppConfig:
     yahoo_app_password: Optional[str]
     yahoo_imap_host: str
     yahoo_imap_port: int
+    yahoo_replay_window_uids: int
     gmail_oauth_client_id: str
     gmail_oauth_client_secret: str
     gmail_oauth_redirect_uri: str
@@ -95,12 +96,16 @@ def load_config() -> AppConfig:
     gmail_delivery_mode = (_get_env("GMAIL_DELIVERY_MODE", "insert") or "insert").strip().lower()
     if gmail_delivery_mode not in {"insert", "import"}:
         raise ConfigError("GMAIL_DELIVERY_MODE must be 'insert' or 'import'")
+    yahoo_replay_window_uids = _get_int("YAHOO_REPLAY_WINDOW_UIDS", 500)
+    if yahoo_replay_window_uids < 0:
+        raise ConfigError("YAHOO_REPLAY_WINDOW_UIDS must be non-negative")
 
     return AppConfig(
         yahoo_email=yahoo_email,
         yahoo_app_password=yahoo_app_password,
         yahoo_imap_host=_get_env("YAHOO_IMAP_HOST", "imap.mail.yahoo.com"),
         yahoo_imap_port=_get_int("YAHOO_IMAP_PORT", 993),
+        yahoo_replay_window_uids=yahoo_replay_window_uids,
         gmail_oauth_client_id=gmail_oauth_client_id,
         gmail_oauth_client_secret=gmail_oauth_client_secret,
         gmail_oauth_redirect_uri=gmail_oauth_redirect_uri,
@@ -127,6 +132,7 @@ def config_summary(config: AppConfig) -> dict:
         "yahoo_app_password": "set" if config.yahoo_app_password else "not_set",
         "yahoo_imap_host": config.yahoo_imap_host,
         "yahoo_imap_port": config.yahoo_imap_port,
+        "yahoo_replay_window_uids": config.yahoo_replay_window_uids,
         "gmail_oauth_client_id": "set" if config.gmail_oauth_client_id else "not_set",
         "gmail_oauth_client_secret": "set" if config.gmail_oauth_client_secret else "not_set",
         "gmail_oauth_redirect_uri": config.gmail_oauth_redirect_uri,

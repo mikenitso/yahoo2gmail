@@ -167,6 +167,7 @@ def main() -> int:
         system_labels["SENT"],
         config.gmail_delivery_mode,
         watch_mailboxes,
+        config.yahoo_replay_window_uids,
         logger=logger,
         conn_factory=lambda: connect(config.sqlite_path),
         alert_manager=alert_manager,

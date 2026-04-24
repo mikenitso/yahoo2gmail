@@ -236,6 +236,135 @@ def test_process_new_messages_continues_after_uid_fetch_failure():
     assert [row["uid"] for row in rows] == [101]
 
 
+def test_process_new_messages_searches_from_500_uids_behind_cursor():
+    conn = _setup_db()
+    conn.execute(
+        """
+        INSERT INTO mailboxes(account_id, name, uidvalidity, last_seen_uid, created_at, updated_at)
+        VALUES (1, 'Bulk', 6, 600, '2026-04-20T00:00:00Z', '2026-04-20T00:00:00Z')
+        """
+    )
+    client = _FakeClient(initial_uids=[450, 501, 600], fetch_map={})
+
+    process_new_messages(client, conn, 1, "Bulk", 6, 600, replay_window_uids=500)
+
+    assert client.search_calls[-1] == 100
+
+
+def test_process_new_messages_fetches_missing_uid_behind_cursor_when_not_in_db():
+    conn = _setup_db()
+    conn.execute(
+        """
+        INSERT INTO mailboxes(account_id, name, uidvalidity, last_seen_uid, created_at, updated_at)
+        VALUES (1, 'Bulk', 6, 600, '2026-04-20T00:00:00Z', '2026-04-20T00:00:00Z')
+        """
+    )
+    raw_old = b"Message-ID: <old@example.com>\r\nSubject: old\r\n\r\nBody"
+    raw_new = b"Message-ID: <new@example.com>\r\nSubject: new\r\n\r\nBody"
+    client = _FakeClient(
+        initial_uids=[450, 600],
+        fetch_map={
+            450: (raw_old, ["\\Seen"], None),
+            600: (raw_new, ["\\Seen"], None),
+        },
+    )
+    conn.execute(
+        """
+        INSERT INTO messages(
+          account_id, mailbox_name, uidvalidity, uid, message_id, rfc822_sha256, imap_internaldate,
+          imap_flags_json, state, created_at, updated_at
+        ) VALUES (
+          1, 'Bulk', 6, 600, '<new@example.com>',
+          '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+          NULL, '[]', 'FETCHED', '2026-04-20T00:00:00Z', '2026-04-20T00:00:00Z'
+        )
+        """
+    )
+
+    last_seen = process_new_messages(client, conn, 1, "Bulk", 6, 600, replay_window_uids=500)
+
+    rows = conn.execute(
+        "SELECT uid, message_id FROM messages WHERE mailbox_name = 'Bulk' ORDER BY uid"
+    ).fetchall()
+
+    assert last_seen == 600
+    assert client.search_calls[-1] == 100
+    assert [row["uid"] for row in rows] == [450, 600]
+    assert rows[0]["message_id"] == "<old@example.com>"
+
+
+def test_process_new_messages_skips_uid_behind_cursor_when_already_in_db():
+    conn = _setup_db()
+    conn.execute(
+        """
+        INSERT INTO mailboxes(account_id, name, uidvalidity, last_seen_uid, created_at, updated_at)
+        VALUES (1, 'Bulk', 6, 600, '2026-04-20T00:00:00Z', '2026-04-20T00:00:00Z')
+        """
+    )
+    raw_existing = b"Message-ID: <existing@example.com>\r\nSubject: existing\r\n\r\nBody"
+    client = _FakeClient(
+        initial_uids=[450],
+        fetch_map={450: (raw_existing, ["\\Seen"], None)},
+    )
+    conn.execute(
+        """
+        INSERT INTO messages(
+          account_id, mailbox_name, uidvalidity, uid, message_id, rfc822_sha256, imap_internaldate,
+          imap_flags_json, state, created_at, updated_at
+        ) VALUES (
+          1, 'Bulk', 6, 450, '<existing@example.com>',
+          '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+          NULL, '[]', 'FETCHED', '2026-04-20T00:00:00Z', '2026-04-20T00:00:00Z'
+        )
+        """
+    )
+
+    process_new_messages(client, conn, 1, "Bulk", 6, 600, replay_window_uids=500)
+
+    rows = conn.execute("SELECT uid FROM messages WHERE mailbox_name = 'Bulk'").fetchall()
+
+    assert len(rows) == 1
+
+
+def test_replay_window_recovers_message_missed_before_cursor_advanced():
+    conn = _setup_db()
+    conn.execute(
+        """
+        INSERT INTO mailboxes(account_id, name, uidvalidity, last_seen_uid, created_at, updated_at)
+        VALUES (1, 'Bulk', 6, 600, '2026-04-20T00:00:00Z', '2026-04-20T00:00:00Z')
+        """
+    )
+    raw_missed = b"Message-ID: <missed@example.com>\r\nSubject: missed\r\n\r\nBody"
+    raw_existing = b"Message-ID: <existing@example.com>\r\nSubject: existing\r\n\r\nBody"
+    client = _FakeClient(
+        initial_uids=[450, 600],
+        fetch_map={
+            450: (raw_missed, ["\\Seen"], None),
+            600: (raw_existing, ["\\Seen"], None),
+        },
+    )
+    conn.execute(
+        """
+        INSERT INTO messages(
+          account_id, mailbox_name, uidvalidity, uid, message_id, rfc822_sha256, imap_internaldate,
+          imap_flags_json, state, created_at, updated_at
+        ) VALUES (
+          1, 'Bulk', 6, 600, '<existing@example.com>',
+          '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+          NULL, '[]', 'FETCHED', '2026-04-20T00:00:00Z', '2026-04-20T00:00:00Z'
+        )
+        """
+    )
+
+    process_new_messages(client, conn, 1, "Bulk", 6, 600, replay_window_uids=500)
+
+    rows = conn.execute(
+        "SELECT uid FROM messages WHERE mailbox_name = 'Bulk' ORDER BY uid"
+    ).fetchall()
+
+    assert [row["uid"] for row in rows] == [450, 600]
+
+
 def test_fetch_status_includes_mailbox_health():
     conn = _setup_db()
     conn.execute(

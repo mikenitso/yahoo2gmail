@@ -7,8 +7,9 @@ def test_start_watchers_restarts_mailbox_after_unexpected_exception(monkeypatch)
     calls = []
     stop = threading.Event()
 
-    def fake_watch_mailbox(client, conn, account_id, mailbox, logger=None):
+    def fake_watch_mailbox(client, conn, account_id, mailbox, replay_window_uids=0, logger=None):
         calls.append(mailbox)
+        assert replay_window_uids == 0
         if len(calls) == 1:
             raise RuntimeError("sqlite locked")
         stop.set()
