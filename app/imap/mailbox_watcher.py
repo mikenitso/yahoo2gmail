@@ -56,8 +56,9 @@ def _get_message_id(rfc822_bytes: bytes) -> Optional[str]:
         return None
     if not value:
         return None
-    match = re.search(r"<[^>]+>", value)
-    return match.group(0) if match else value.strip() or None
+    value_text = str(value)
+    match = re.search(r"<[^>]+>", value_text)
+    return match.group(0) if match else value_text.strip() or None
 
 
 def _sha256_hex(payload: bytes) -> str:

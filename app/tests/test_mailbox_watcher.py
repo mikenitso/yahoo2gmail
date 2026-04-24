@@ -1,8 +1,10 @@
 import sqlite3
+from email.header import Header
 
 from app.admin.server import _fetch_status
 from app.imap.mailbox_watcher import (
     YahooIMAPError,
+    _get_message_id,
     discover_mailboxes,
     initialize_mailbox_state,
     process_new_messages,
@@ -111,6 +113,26 @@ def test_discover_mailboxes_includes_sent_folder():
     mailboxes = discover_mailboxes(["INBOX", "Bulk", "Sent", "Trash"])
 
     assert mailboxes == ["INBOX", "Bulk", "Sent"]
+
+
+def test_get_message_id_handles_header_objects(monkeypatch):
+    class _FakeMessage:
+        def get(self, name: str):
+            assert name == "Message-ID"
+            return Header("<header-object@example.com>")
+
+    class _FakeParser:
+        def __init__(self, policy):
+            self.policy = policy
+
+        def parsebytes(self, payload: bytes):
+            return _FakeMessage()
+
+    monkeypatch.setattr("app.imap.mailbox_watcher.BytesParser", _FakeParser)
+
+    message_id = _get_message_id(b"Message-ID: ignored\r\n\r\nBody")
+
+    assert message_id == "<header-object@example.com>"
 
 
 def test_initialize_mailbox_state_sets_health_fields():
