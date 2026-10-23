@@ -1,0 +1,7 @@
+# Runtime inputs. Regenerate requirements.txt with uv pip compile --generate-hashes
+# --python-version 3.11 requirements.in -o requirements.txt.
+cryptography==50.0.2
+google-api-python-client==2.201.0
+google-auth==2.62.0
+google-auth-oauthlib==1.5.0
+certifi>=2026.10.19

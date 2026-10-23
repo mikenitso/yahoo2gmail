@@ -111,6 +111,9 @@ The included `docker-compose.yml` is suitable for a long-running home-server dep
 
 If you deploy with Portainer from GitHub, pushing to `main` is enough for a standard repo-based stack update.
 
+See [the October 2026 security rebuild runbook](docs/security/2026-10-23-rebuild.md)
+for preparation results, credential/state precautions, verification gates and rollback.
+
 ## Configuration reference
 
 ### Required

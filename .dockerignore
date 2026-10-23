@@ -1,0 +1,15 @@
+# Only source/build inputs may enter the build context; never credentials/state.
+*
+!Dockerfile
+!requirements.txt
+!scripts/
+!scripts/verify_trust.py
+!app/
+!app/**
+!migrations/
+!migrations/**
+!SPEC.md
+!TASKS.md
+!README.md
+**/__pycache__
+**/*.pyc

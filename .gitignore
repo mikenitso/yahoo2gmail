@@ -8,3 +8,7 @@ __pycache__/
 *.db
 data/
 screenshots/
+
+.venv311/
+.test-python/
+.uv-cache/
